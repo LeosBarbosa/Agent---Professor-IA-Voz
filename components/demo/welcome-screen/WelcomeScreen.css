@@ -1,0 +1,123 @@
+.welcome-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  text-align: center;
+  color: var(--gray-500);
+  padding: 20px;
+}
+
+.welcome-content {
+  max-width: 900px;
+  width: 100%;
+}
+
+.welcome-icon {
+  font-size: 60px;
+  color: var(--accent-blue-headers);
+  margin-bottom: 20px;
+  font-family: 'Material Symbols Outlined';
+  font-variation-settings: 'FILL' 1;
+}
+
+.title-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.welcome-title {
+  font-size: 28px;
+  font-weight: bold;
+  color: var(--gray-300);
+  text-transform: capitalize;
+}
+
+.welcome-description {
+  font-size: 18px;
+  margin-bottom: 40px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.prompt-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  justify-content: center;
+  width: 100%;
+}
+
+.prompt-card {
+  background-color: var(--Neutral-15);
+  border: 1px solid var(--border-stroke);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+}
+
+.prompt-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.prompt-card h4 {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--accent-blue-active);
+  margin-bottom: 8px;
+}
+
+.prompt-card p {
+  font-size: 14px;
+  color: var(--gray-300);
+  line-height: 1.5;
+  flex-grow: 1;
+  margin-bottom: 16px;
+}
+
+.prompt-card button {
+  background-color: var(--Neutral-20);
+  border: 1px solid var(--Neutral-30);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 13px;
+  color: var(--gray-200);
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-start;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.prompt-card button .icon {
+  color: var(--accent-blue);
+  font-size: 20px;
+  transition: transform 0.2s;
+}
+
+.prompt-card button span:last-child {
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: normal;
+}
+
+.prompt-card button:hover {
+  background-color: var(--Neutral-30);
+  color: var(--text);
+}
+
+.prompt-card button:hover .icon {
+  transform: scale(1.2);
+}
