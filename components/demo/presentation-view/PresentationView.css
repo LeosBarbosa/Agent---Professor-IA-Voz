@@ -1,0 +1,92 @@
+.presentation-view-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.95);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.presentation-close-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: var(--gray-300);
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.presentation-close-button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+  transform: scale(1.1);
+}
+
+.presentation-close-button .icon {
+  font-size: 28px;
+}
+
+.presentation-content {
+  color: var(--text);
+  font-size: 3.5vw;
+  line-height: 1.4;
+  text-align: center;
+  max-width: 90%;
+  max-height: 100%;
+  overflow-y: auto;
+  font-weight: 300;
+}
+
+.presentation-content strong {
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+
+.presentation-content pre {
+  background-color: var(--Neutral-5);
+  border: 1px solid var(--Neutral-30);
+  border-radius: 8px;
+  padding: 2vw;
+  margin-top: 1.5vw;
+  margin-bottom: 1vw;
+  overflow-x: auto;
+  text-align: left;
+}
+
+.presentation-content code {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1.8vw;
+  color: var(--Neutral-80);
+  white-space: pre;
+}
+
+
+@media (max-width: 768px) {
+  .presentation-content {
+    font-size: 5vw;
+  }
+  .presentation-content code {
+    font-size: 2.8vw;
+  }
+}
+
+@media (min-width: 1600px) {
+  .presentation-content {
+    font-size: 56px; /* Max font size */
+  }
+  .presentation-content code {
+    font-size: 28px; /* Max code font size */
+  }
+}

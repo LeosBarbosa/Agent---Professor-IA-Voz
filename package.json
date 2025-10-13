@@ -1,5 +1,5 @@
 {
-  "name": "ai-persona-sandbox",
+  "name": "ia-persona",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,10 +14,8 @@
     "@google/genai": "^1.4.0",
     "eventemitter3": "^5.0.1",
     "lodash": "^4.17.21",
-    "vite": "^6.3.5",
     "classnames": "^2.5.1",
-    "zustand": "^5.0.8",
-    "path": "^0.12.7"
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

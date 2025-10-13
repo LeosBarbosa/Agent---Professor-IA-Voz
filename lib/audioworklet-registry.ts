@@ -36,12 +36,9 @@ export const createWorketFromSrc = (
   workletName: string,
   workletSrc: string
 ) => {
-  const script = new Blob(
-    [`registerProcessor("${workletName}", ${workletSrc})`],
-    {
-      type: 'application/javascript',
-    }
-  );
+  const script = new Blob([workletSrc], {
+    type: 'application/javascript',
+  });
 
   return URL.createObjectURL(script);
 };

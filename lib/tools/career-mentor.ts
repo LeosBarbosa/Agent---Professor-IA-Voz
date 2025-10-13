@@ -6,6 +6,23 @@
 import { FunctionResponseScheduling } from '@google/genai';
 import { FunctionCall } from '../state';
 
+const readWebPageTool: FunctionCall = {
+  name: 'read_web_page',
+  description: 'Lê o conteúdo textual de um determinado URL de página da web e se prepara para responder a perguntas sobre ele.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      url: {
+        type: 'STRING',
+        description: 'O URL da página da web a ser lida.',
+      },
+    },
+    required: ['url'],
+  },
+  isEnabled: true,
+  scheduling: FunctionResponseScheduling.INTERRUPT,
+};
+
 export const englishTeacherTools: FunctionCall[] = [
   {
     name: 'define_word',
@@ -75,7 +92,10 @@ export const englishTeacherTools: FunctionCall[] = [
     isEnabled: true,
     scheduling: FunctionResponseScheduling.INTERRUPT,
   },
+  readWebPageTool,
 ];
 
 
-export const industrialProfessorTools: FunctionCall[] = [];
+export const industrialProfessorTools: FunctionCall[] = [
+  readWebPageTool,
+];

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { useEffect, useState } from 'react';
-import { FunctionCall } from '@/lib/state';
+import { FunctionCall } from '../lib/state';
 import Modal from './Modal';
 import { FunctionResponseScheduling } from '@google/genai';
 
@@ -25,9 +25,12 @@ export default function ToolEditorModal({
   const [scheduling, setScheduling] = useState<FunctionResponseScheduling>(
     FunctionResponseScheduling.INTERRUPT,
   );
+  const [isNew, setIsNew] = useState(false);
+
 
   useEffect(() => {
     if (tool) {
+      setIsNew(tool.name.startsWith('new_function_'));
       setName(tool.name);
       setDescription(tool.description || '');
       setParametersStr(JSON.stringify(tool.parameters || {}, null, 2));
@@ -58,7 +61,7 @@ export default function ToolEditorModal({
   return (
     <Modal onClose={onClose}>
       <div className="tool-editor-modal">
-        <h2>Editar Chamada de Função</h2>
+        <h2>{isNew ? 'Criar Nova Ferramenta' : 'Editar Ferramenta'}</h2>
         <div className="form-field">
           <label htmlFor="tool-name">Nome</label>
           <input

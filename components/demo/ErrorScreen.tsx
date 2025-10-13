@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { useLiveAPIContext } from '@/contexts/LiveAPIContext';
+import { useLiveAPIProvider } from '../../contexts/LiveAPIContext';
 import React, { useEffect, useState } from 'react';
 
 export interface ExtendedErrorType {
@@ -12,7 +12,7 @@ export interface ExtendedErrorType {
 }
 
 export default function ErrorScreen() {
-  const { client } = useLiveAPIContext();
+  const { client } = useLiveAPIProvider();
   const [error, setError] = useState<{ message?: string } | null>(null);
 
   useEffect(() => {
@@ -28,16 +28,19 @@ export default function ErrorScreen() {
     };
   }, [client]);
 
-  const quotaErrorMessage =
-    'A API Gemini Live no AI Studio tem uma cota gratuita diária limitada. Volte amanhã para continuar.';
-
   let errorMessage = 'Algo deu errado. Por favor, tente novamente.';
   let rawMessage: string | null = error?.message || null;
   let tryAgainOption = true;
+
   if (error?.message?.includes('RESOURCE_EXHAUSTED')) {
-    errorMessage = quotaErrorMessage;
+    errorMessage =
+      'Você atingiu o limite de uso gratuito da API Gemini Live por hoje. Agradecemos por explorar o sandbox! Sua cota será renovada amanhã.';
     rawMessage = null;
     tryAgainOption = false;
+  } else if (error?.message?.includes('Network error')) {
+    errorMessage =
+      'Ocorreu um erro de rede. Verifique sua conexão com a internet e confirme se a sua chave de API é válida e está configurada corretamente.';
+    rawMessage = `Detalhe do erro: ${rawMessage}`;
   }
 
   if (!error) {

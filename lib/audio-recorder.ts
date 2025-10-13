@@ -35,12 +35,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return window.btoa(binary);
 }
 
-// FIX: Refactored to use composition over inheritance for EventEmitter
 export class AudioRecorder {
-  // FIX: Use an internal EventEmitter instance
   private emitter = new EventEmitter();
 
-  // FIX: Expose on/off methods
   public on = this.emitter.on.bind(this.emitter);
   public off = this.emitter.off.bind(this.emitter);
 
@@ -50,6 +47,7 @@ export class AudioRecorder {
   recording: boolean = false;
   recordingWorklet: AudioWorkletNode | undefined;
   vuWorklet: AudioWorkletNode | undefined;
+  analyser: AnalyserNode | undefined;
 
   private starting: Promise<void> | null = null;
 
@@ -80,7 +78,6 @@ export class AudioRecorder {
 
         if (arrayBuffer) {
           const arrayBufferString = arrayBufferToBase64(arrayBuffer);
-          // FIX: Changed this.emit to this.emitter.emit
           this.emitter.emit('data', arrayBufferString);
         }
       };
@@ -93,11 +90,15 @@ export class AudioRecorder {
       );
       this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
       this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
-        // FIX: Changed this.emit to this.emitter.emit
         this.emitter.emit('volume', ev.data.volume);
       };
 
       this.source.connect(this.vuWorklet);
+
+      // Analyser for visualization
+      this.analyser = this.audioContext.createAnalyser();
+      this.source.connect(this.analyser);
+
       this.recording = true;
       resolve();
       this.starting = null;
@@ -108,11 +109,16 @@ export class AudioRecorder {
     // It is plausible that stop would be called before start completes,
     // such as if the Websocket immediately hangs up
     const handleStop = () => {
-      this.source?.disconnect();
+      if (this.source) {
+        if (this.recordingWorklet) this.source.disconnect(this.recordingWorklet);
+        if (this.vuWorklet) this.source.disconnect(this.vuWorklet);
+        if (this.analyser) this.source.disconnect(this.analyser);
+      }
       this.stream?.getTracks().forEach(track => track.stop());
       this.stream = undefined;
       this.recordingWorklet = undefined;
       this.vuWorklet = undefined;
+      this.analyser = undefined;
     };
     if (this.starting) {
       this.starting.then(handleStop);

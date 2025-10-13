@@ -13,11 +13,13 @@ import {
   LiveServerToolCallCancellation,
   Part,
   Session,
+  Content,
 } from '@google/genai';
 import EventEmitter from 'eventemitter3';
 import { DEFAULT_LIVE_API_MODEL } from './constants';
 import { difference } from 'lodash';
 import { base64ToArrayBuffer } from './utils';
+import { useSettings } from './state';
 
 /**
  * Represents a single log entry in the system.
@@ -69,16 +71,13 @@ export interface LiveClientEventTypes {
   outputTranscription: (text: string, isFinal: boolean) => void;
 }
 
-// FIX: Refactored to use composition over inheritance for EventEmitter
 export class GenAILiveClient {
   public readonly model: string = DEFAULT_LIVE_API_MODEL;
 
   protected readonly client: GoogleGenAI;
   protected session?: Session;
 
-  // FIX: Use an internal EventEmitter instance
   private emitter = new EventEmitter<LiveClientEventTypes>();
-  // FIX: Expose on/off methods
   public on = this.emitter.on.bind(this.emitter);
   public off = this.emitter.off.bind(this.emitter);
 
@@ -100,7 +99,11 @@ export class GenAILiveClient {
     });
   }
 
-  public async connect(config: LiveConnectConfig): Promise<boolean> {
+  // The `connect` method separates history from the main config object,
+  // as the Gemini API expects it as a top-level property in the connection options.
+  public async connect(
+    configWithHistory: LiveConnectConfig & { history?: Content[] },
+  ): Promise<boolean> {
     if (this._status === 'connected' || this._status === 'connecting') {
       return false;
     }
@@ -113,12 +116,13 @@ export class GenAILiveClient {
       onclose: this.onClose.bind(this),
     };
 
+    const { history, ...config } = configWithHistory;
+
     try {
       this.session = await this.client.live.connect({
         model: this.model,
-        config: {
-          ...config,
-        },
+        config,
+        history,
         callbacks,
       });
     } catch (e: any) {
@@ -148,17 +152,18 @@ export class GenAILiveClient {
 
   public send(parts: Part | Part[], turnComplete: boolean = true) {
     if (this._status !== 'connected' || !this.session) {
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('error', new ErrorEvent('Client is not connected'));
       return;
     }
-    this.session.sendClientContent({ turns: parts, turnComplete });
+    this.session.sendClientContent({
+      turns: Array.isArray(parts) ? parts : [parts],
+      turnComplete
+    });
     this.log(`client.send`, parts);
   }
 
   public sendRealtimeInput(chunks: Array<{ mimeType: string; data: string }>) {
     if (this._status !== 'connected' || !this.session) {
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('error', new ErrorEvent('Client is not connected'));
       return;
     }
@@ -184,7 +189,6 @@ export class GenAILiveClient {
 
   public sendToolResponse(toolResponse: LiveClientToolResponse) {
     if (this._status !== 'connected' || !this.session) {
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('error', new ErrorEvent('Client is not connected'));
       return;
     }
@@ -202,19 +206,16 @@ export class GenAILiveClient {
 
   protected onMessage(message: LiveServerMessage) {
     if (message.setupComplete) {
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('setupcomplete');
       return;
     }
     if (message.toolCall) {
       this.log('server.toolCall', message);
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('toolcall', message.toolCall);
       return;
     }
     if (message.toolCallCancellation) {
       this.log('receive.toolCallCancellation', message);
-      // FIX: Changed this.emit to this.emitter.emit
       this.emitter.emit('toolcallcancellation', message.toolCallCancellation);
       return;
     }
@@ -223,17 +224,14 @@ export class GenAILiveClient {
       const { serverContent } = message;
       if (serverContent.interrupted) {
         this.log('receive.serverContent', 'interrupted');
-        // FIX: Changed this.emit to this.emitter.emit
         this.emitter.emit('interrupted');
         return;
       }
 
       if (serverContent.inputTranscription) {
-        // FIX: Changed this.emit to this.emitter.emit
         this.emitter.emit(
           'inputTranscription',
           serverContent.inputTranscription.text,
-          // FIX: Property 'isFinal' does not exist on type 'Transcription'.
           (serverContent.inputTranscription as any).isFinal ?? false,
         );
         this.log(
@@ -243,11 +241,9 @@ export class GenAILiveClient {
       }
 
       if (serverContent.outputTranscription) {
-        // FIX: Changed this.emit to this.emitter.emit
         this.emitter.emit(
           'outputTranscription',
           serverContent.outputTranscription.text,
-          // FIX: Property 'isFinal' does not exist on type 'Transcription'.
           (serverContent.outputTranscription as any).isFinal ?? false,
         );
         this.log(
@@ -268,7 +264,6 @@ export class GenAILiveClient {
         base64s.forEach(b64 => {
           if (b64) {
             const data = base64ToArrayBuffer(b64);
-            // FIX: Changed this.emit to this.emitter.emit
             this.emitter.emit('audio', data);
             this.log(`server.audio`, `buffer (${data.byteLength})`);
           }
@@ -276,7 +271,6 @@ export class GenAILiveClient {
 
         if (otherParts.length > 0) {
           const content: LiveServerContent = { modelTurn: { parts: otherParts } };
-          // FIX: Changed this.emit to this.emitter.emit
           this.emitter.emit('content', content);
           this.log(`server.content`, message);
         }
@@ -284,7 +278,6 @@ export class GenAILiveClient {
 
       if (serverContent.turnComplete) {
         this.log('server.send', 'turnComplete');
-        // FIX: Changed this.emit to this.emitter.emit
         this.emitter.emit('turncomplete');
       }
     }
@@ -296,13 +289,11 @@ export class GenAILiveClient {
 
     const message = `Could not connect to GenAI Live: ${e.message}`;
     this.log(`server.${e.type}`, message);
-    // FIX: Changed this.emit to this.emitter.emit
     this.emitter.emit('error', e);
   }
 
   protected onOpen() {
     this._status = 'connected';
-    // FIX: Changed this.emit to this.emitter.emit
     this.emitter.emit('open');
   }
 
@@ -321,7 +312,6 @@ export class GenAILiveClient {
       `server.${e.type}`,
       `disconnected ${reason ? `with reason: ${reason}` : ``}`
     );
-    // FIX: Changed this.emit to this.emitter.emit
     this.emitter.emit('close', e);
   }
 
@@ -331,7 +321,9 @@ export class GenAILiveClient {
    * @param message - Log message
    */
   protected log(type: string, message: string | object) {
-    // FIX: Changed this.emit to this.emitter.emit
+    if (useSettings.getState().debugMode) {
+      console.log(`[DEBUG] ${type}:`, message);
+    }
     this.emitter.emit('log', {
       type,
       message,

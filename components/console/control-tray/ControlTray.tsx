@@ -20,29 +20,53 @@
 
 import cn from 'classnames';
 
-import { memo, ReactNode, useEffect, useRef, useState } from 'react';
-import { AudioRecorder } from '../../../lib/audio-recorder';
+import React, { memo, ReactNode, useEffect, useRef, useState } from 'react';
 import {
-  useSettings,
-  useTools,
   useLogStore,
-  ConversationTurn,
-} from '@/lib/state';
+  useFileStore,
+  useUI,
+} from '../../../lib/state';
 
-import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
+import { useLiveAPIProvider } from '../../../contexts/LiveAPIContext';
 import Modal from '../../Modal';
 
-// START of new UploadModal component definition
+// START of UploadModal component definition
 type UploadModalProps = {
   onClose: () => void;
-  onSendText: (text: string) => void;
+  onSendText: (text: string, image?: string | null) => void;
+  initialTextContent?: string;
+  initialImageContent?: string | null;
+  initialImageName?: string;
 };
 
-function UploadModal({ onClose, onSendText }: UploadModalProps) {
-  const [activeTab, setActiveTab] = useState<'paste' | 'upload'>('paste');
-  const [textContent, setTextContent] = useState('');
+function UploadModal({
+  onClose,
+  onSendText,
+  initialTextContent = '',
+  initialImageContent = null,
+  initialImageName = '',
+}: UploadModalProps) {
+  const [activeTab, setActiveTab] = useState<'paste' | 'upload'>('upload');
+  const [textContent, setTextContent] = useState(initialTextContent);
   const [fileName, setFileName] = useState('');
+  const [attachedImage, setAttachedImage] = useState<string | null>(
+    initialImageContent,
+  );
+  const [imageName, setImageName] = useState(initialImageName);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (initialTextContent) {
+      setActiveTab('paste');
+    }
+    if (initialImageContent) {
+      // If we get an image, no need to keep the initial text
+      // as the prompt will be constructed based on the image.
+      // You can adjust this logic if both can coexist from a Drive file.
+      setTextContent('');
+    }
+  }, [initialTextContent, initialImageContent]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -71,9 +95,25 @@ function UploadModal({ onClose, onSendText }: UploadModalProps) {
     }
   };
 
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        alert('Por favor, selecione um arquivo de imagem válido.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => {
+        setAttachedImage(e.target?.result as string);
+        setImageName(file.name);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSend = () => {
-    if (textContent.trim()) {
-      onSendText(textContent);
+    if (textContent.trim() || attachedImage) {
+      onSendText(textContent, attachedImage);
     }
   };
 
@@ -86,8 +126,8 @@ function UploadModal({ onClose, onSendText }: UploadModalProps) {
       <div className="upload-modal">
         <h2>Enviar Conteúdo para a IA</h2>
         <p className="upload-modal-subtitle">
-          Cole o texto ou envie um arquivo para que a IA possa lê-lo e
-          analisá-lo.
+          Cole o texto, envie um arquivo ou anexe uma imagem para que a IA possa
+          analisá-los.
         </p>
 
         <div className="upload-modal-tabs">
@@ -135,6 +175,37 @@ function UploadModal({ onClose, onSendText }: UploadModalProps) {
           )}
         </div>
 
+        <div className="image-attachment-area">
+          <h4>Anexar Imagem (Opcional)</h4>
+          <input
+            type="file"
+            ref={imageInputRef}
+            onChange={handleImageChange}
+            accept="image/*"
+            style={{ display: 'none' }}
+          />
+          <button onClick={() => imageInputRef.current?.click()}>
+            <span className="icon">add_photo_alternate</span>
+            Selecionar Imagem
+          </button>
+          {attachedImage && (
+            <div className="image-preview">
+              <img src={attachedImage} alt={imageName || 'Prévia da imagem'} />
+              <button
+                className="remove-image-button"
+                aria-label="Remover imagem anexada"
+                onClick={() => {
+                  setAttachedImage(null);
+                  setImageName('');
+                  if (imageInputRef.current) imageInputRef.current.value = '';
+                }}
+              >
+                <span className="icon">close</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="modal-actions">
           <button onClick={onClose} className="cancel-button">
             Cancelar
@@ -142,7 +213,7 @@ function UploadModal({ onClose, onSendText }: UploadModalProps) {
           <button
             onClick={handleSend}
             className="save-button"
-            disabled={!textContent.trim()}
+            disabled={!textContent.trim() && !attachedImage}
           >
             Enviar para a IA
           </button>
@@ -151,176 +222,182 @@ function UploadModal({ onClose, onSendText }: UploadModalProps) {
     </Modal>
   );
 }
-// END of new UploadModal component definition
+// END of UploadModal component definition
 
-const formatTimestamp = (date: Date) => {
-  const pad = (num: number, size = 2) => num.toString().padStart(size, '0');
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  const seconds = pad(date.getSeconds());
-  return `${hours}:${minutes}:${seconds}`;
-};
-
-const formatTurnsToTxt = (turns: ConversationTurn[]): string => {
-  const header = `Transcrição da Conversa\nData: ${new Date().toLocaleString()}\n\n---\n\n`;
-  const content = turns
-    .map(turn => {
-      const timestamp = formatTimestamp(turn.timestamp);
-      const role = turn.role.charAt(0).toUpperCase() + turn.role.slice(1);
-      const text = turn.text.trim();
-      return `[${timestamp}] ${role}:\n${text}`;
-    })
-    .join('\n\n---\n\n');
-  return header + content;
-};
 
 export type ControlTrayProps = {
   children?: ReactNode;
 };
 
 function ControlTray({ children }: ControlTrayProps) {
-  const [audioRecorder] = useState(() => new AudioRecorder());
-  const [muted, setMuted] = useState(false);
-  const connectButtonRef = useRef<HTMLButtonElement>(null);
   const [inputText, setInputText] = useState('');
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const { files, clearFiles } = useFileStore();
+  const {
+    isAgentThinking,
+    uploadModalState,
+    openUploadModal,
+    closeUploadModal,
+  } = useUI();
 
-  const { client, connected, connect, disconnect } = useLiveAPIContext();
+  const {
+    client,
+    connected,
+    connect,
+    disconnect,
+    muted,
+    toggleMute,
+    recordingStatus,
+    toggleRecording,
+    recordingTime,
+  } = useLiveAPIProvider();
+
   const addTurn = useLogStore(state => state.addTurn);
 
-  useEffect(() => {
-    // FIX: Cannot find name 'connectButton'. Did you mean 'connectButtonRef'?
-    if (!connected && connectButtonRef.current) {
-      // FIX: Cannot find name 'connectButton'. Did you mean 'connectButtonRef'?
-      connectButtonRef.current.focus();
-    }
-  }, [connected]);
-
-  useEffect(() => {
-    if (!connected) {
-      setMuted(false);
-      setIsRecording(false);
-    }
-  }, [connected]);
-
-  useEffect(() => {
-    const onData = (base64: string) => {
-      client.sendRealtimeInput([
-        {
-          mimeType: 'audio/pcm;rate=16000',
-          data: base64,
-        },
-      ]);
-    };
-    if (connected && !muted && audioRecorder) {
-      audioRecorder.on('data', onData);
-      audioRecorder.start();
-    } else {
-      audioRecorder.stop();
-    }
-    return () => {
-      audioRecorder.off('data', onData);
-    };
-  }, [connected, client, muted, audioRecorder]);
-
-  const handleMicClick = () => {
+  const handleMicClick = async () => {
     if (connected) {
-      setMuted(!muted);
+      toggleMute();
     } else {
-      connect();
+      try {
+        await connect();
+        if (recordingStatus === 'idle') {
+          toggleRecording();
+        }
+        toggleMute();
+      } catch (error) {
+        console.error('Falha ao conectar o microfone:', error);
+        // O ErrorScreen deve lidar com a exibição deste erro para o usuário.
+      }
     }
+  };
+
+  const constructPrimingPrompt = (initialPrompt: string) => {
+    const { turns } = useLogStore.getState();
+    if (files.length === 0 || turns.length > 0) {
+      return initialPrompt;
+    }
+
+    const fileContents = files
+      .map(
+        f => `---
+**Arquivo: ${f.name}**
+
+${f.content}
+---`,
+      )
+      .join('\n\n');
+
+    return `Antes de responder à minha primeira pergunta, primeiro leia e processe o conteúdo dos seguintes arquivos que estou fornecendo como contexto. Depois de processar os arquivos, sua primeira resposta deve começar com a frase "Contexto dos arquivos lido e compreendido." e, em seguida, prossiga para responder à minha pergunta.
+
+${fileContents}
+
+Minha primeira pergunta é: ${initialPrompt}`;
   };
 
   const handleTextSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = inputText.trim();
-    if (!text) return;
+    if (!text || isSending) return;
 
+    setIsSending(true);
     try {
+      let justConnected = false;
       if (!connected) {
         await connect();
+        justConnected = true;
       }
 
-      addTurn({ role: 'user', text, isFinal: true });
-      client.send({ text });
+      if (justConnected && recordingStatus === 'idle') {
+        toggleRecording();
+      }
+
+      const fullPrompt = constructPrimingPrompt(text);
+      addTurn({ role: 'user', text: fullPrompt, isFinal: true });
+      client.send({ text: fullPrompt });
       setInputText('');
+
+      if (files.length > 0 && useLogStore.getState().turns.length <= 1) {
+        clearFiles();
+      }
     } catch (error) {
       console.error('Falha ao conectar ou enviar mensagem:', error);
       // O ErrorScreen deve lidar com a exibição deste erro.
+    } finally {
+      setIsSending(false);
     }
   };
 
-  const handleSendTextFromFile = async (textContent: string) => {
-    if (!textContent.trim()) return;
+  const handleSendTextFromFile = async (
+    textContent: string,
+    imageContent?: string | null,
+  ) => {
+    if ((!textContent.trim() && !imageContent) || isSending) return;
 
+    setIsSending(true);
+    closeUploadModal();
     try {
+      let justConnected = false;
       if (!connected) {
         await connect();
+        justConnected = true;
       }
 
-      const formattedMessage = `Eu li o seguinte texto. Por favor, analise-o e prepare-se para discuti-lo comigo:\n\n---\n${textContent}\n---`;
+      if (justConnected && recordingStatus === 'idle') {
+        toggleRecording();
+      }
 
-      addTurn({ role: 'user', text: formattedMessage, isFinal: true });
-      client.send({ text: formattedMessage });
-      setIsUploadModalOpen(false); // Close modal
-    } catch (error) {
-      console.error('Falha ao conectar ou enviar arquivo de texto:', error);
-    }
-  };
+      let message;
+      if (textContent && imageContent) {
+        message = `Eu li o seguinte texto e anexei uma imagem. Por favor, analise ambos e prepare-se para discuti-los comigo:\n\n---\n${textContent}\n---`;
+      } else if (textContent) {
+        message = `Eu li o seguinte texto. Por favor, analise-o e prepare-se para discuti-lo comigo:\n\n---\n${textContent}\n---`;
+      } else {
+        message = `Anexei a seguinte imagem. Por favor, analise-a e prepare-se para discuti-la comigo.`;
+      }
 
-  const handleExportLogs = () => {
-    const { systemPrompt, model } = useSettings.getState();
-    const { tools } = useTools.getState();
-    const { turns } = useLogStore.getState();
+      const fullPrompt = constructPrimingPrompt(message);
 
-    const logData = {
-      configuration: {
-        model,
-        systemPrompt,
-      },
-      tools,
-      conversation: turns.map(turn => ({
-        ...turn,
-        // Convert Date object to ISO string for JSON serialization
-        timestamp: turn.timestamp.toISOString(),
-      })),
-    };
+      addTurn({
+        role: 'user',
+        text: fullPrompt,
+        image: imageContent,
+        isFinal: true,
+      });
 
-    const jsonString = JSON.stringify(logData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    a.href = url;
-    a.download = `live-api-logs-${timestamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleToggleRecording = () => {
-    if (isRecording) {
-      const { turns } = useLogStore.getState();
-      if (turns.length > 0) {
-        const formattedTranscript = formatTurnsToTxt(turns);
-        const blob = new Blob([formattedTranscript], {
-          type: 'text/plain;charset=utf-8',
+      const parts: any[] = [{ text: fullPrompt }];
+      if (imageContent) {
+        // Assuming imageContent is a data URL like "data:image/jpeg;base64,..."
+        const [meta, base64Data] = imageContent.split(',');
+        const mimeType = meta.split(':')[1].split(';')[0];
+        parts.push({
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data,
+          },
         });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.href = url;
-        a.download = `transcript-${timestamp}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
       }
+
+      client.send(parts);
+
+      if (files.length > 0 && useLogStore.getState().turns.length <= 1) {
+        clearFiles();
+      }
+    } catch (error) {
+      console.error('Falha ao conectar ou enviar arquivo:', error);
+    } finally {
+      setIsSending(false);
     }
-    setIsRecording(!isRecording);
   };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  const isRecording = recordingStatus === 'recording';
 
   const micButtonTitle = connected
     ? muted
@@ -332,13 +409,22 @@ function ControlTray({ children }: ControlTrayProps) {
 
   return (
     <>
-      <section className="control-tray">
-        <nav className={cn('actions-nav')}>
+      <section className="chat-input-area">
+        <div className="chat-input-actions">
           <button
-            className={cn('action-button mic-button')}
+            className={cn('action-button', { loading: isSending })}
+            onClick={() => openUploadModal({})}
+            aria-label="Anexar arquivo"
+            title="Anexar arquivo ou texto"
+            disabled={isSending || recordingStatus !== 'idle'}
+          >
+            <span className="icon">attach_file</span>
+          </button>
+          <button
+            className={cn('action-button mic-button', { muted, connected })}
             onClick={handleMicClick}
             title={micButtonTitle}
-            disabled={!connected && isRecording}
+            aria-label={micButtonTitle}
           >
             {!muted ? (
               <span className="material-symbols-outlined filled">mic</span>
@@ -346,87 +432,74 @@ function ControlTray({ children }: ControlTrayProps) {
               <span className="material-symbols-outlined filled">mic_off</span>
             )}
           </button>
-          <button
-            className={cn('action-button', 'record-button', {
-              recording: isRecording,
-            })}
-            onClick={handleToggleRecording}
-            aria-label={
-              isRecording ? 'Parar gravação' : 'Gravar transcrição'
-            }
-            title={
-              isRecording
-                ? 'Parar gravação e baixar'
-                : 'Gravar transcrição da conversa'
-            }
-          >
-            <span className="icon">fiber_manual_record</span>
-          </button>
-          <button
-            className={cn('action-button')}
-            onClick={() => setIsUploadModalOpen(true)}
-            aria-label="Enviar arquivo ou texto"
-            title="Enviar arquivo ou texto"
-          >
-            <span className="icon">attach_file</span>
-          </button>
-          <button
-            className={cn('action-button')}
-            onClick={handleExportLogs}
-            aria-label="Exportar Logs"
-            title="Exportar logs da sessão"
-          >
-            <span className="icon">download</span>
-          </button>
-          <button
-            className={cn('action-button')}
-            onClick={useLogStore.getState().clearTurns}
-            aria-label="Redefinir Conversa"
-            title="Redefinir logs da sessão"
-          >
-            <span className="icon">refresh</span>
-          </button>
-          {children}
-        </nav>
-
-        <form className="text-input-form" onSubmit={handleTextSubmit}>
+        </div>
+        <form
+          className={cn('text-input-form', { 'agent-thinking': isAgentThinking })}
+          onSubmit={handleTextSubmit}
+        >
           <input
             type="text"
             value={inputText}
             onChange={e => setInputText(e.target.value)}
-            placeholder="Digite uma mensagem..."
-            disabled={isRecording}
+            placeholder={
+              isAgentThinking ? 'Agente pensando...' : 'Digite uma mensagem...'
+            }
+            disabled={(isRecording && !muted) || isAgentThinking}
           />
           <button
             type="submit"
-            disabled={!inputText.trim() || isRecording}
-            title="Enviar mensagem"
+            disabled={
+              !inputText.trim() ||
+              (isRecording && !muted) ||
+              isSending ||
+              isAgentThinking
+            }
+            title={isAgentThinking ? 'Aguarde o agente' : 'Enviar mensagem'}
+            aria-label={isAgentThinking ? 'Aguarde o agente' : 'Enviar mensagem'}
+            className={cn({ loading: isSending })}
           >
-            <span className="icon">send</span>
+            {isAgentThinking ? (
+              <div className="agent-thinking-indicator">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : isSending ? (
+              <span className="spinner"></span>
+            ) : (
+              <span className="icon">send</span>
+            )}
           </button>
         </form>
+         <div className="session-controls">
+          {recordingStatus === 'recording' && (
+              <div className="recording-timer">
+                <span className="icon">fiber_manual_record</span>
+                {formatRecordingTime(recordingTime)}
+              </div>
+            )}
+          <button
+            className={cn('connect-button', { connected })}
+            onClick={connected ? disconnect : connect}
+            title={connectButtonTitle}
+            aria-label={connectButtonTitle}
+            disabled={recordingStatus !== 'idle'}
+          >
+            <span className="material-symbols-outlined filled">
+              {connected ? 'pause_circle' : 'play_circle'}
+            </span>
+            <span>{connected ? 'Conectado' : 'Desconectado'}</span>
+          </button>
+         </div>
 
-        <div className={cn('connection-container', { connected })}>
-          <div className="connection-button-container">
-            <button
-              ref={connectButtonRef}
-              className={cn('action-button connect-toggle', { connected })}
-              onClick={connected ? disconnect : connect}
-              title={connectButtonTitle}
-              disabled={isRecording}
-            >
-              <span className="material-symbols-outlined filled">
-                {connected ? 'pause' : 'play_arrow'}
-              </span>
-            </button>
-          </div>
-          <span className="text-indicator">Transmitindo</span>
-        </div>
       </section>
-      {isUploadModalOpen && (
+      {uploadModalState.isOpen && (
         <UploadModal
-          onClose={() => setIsUploadModalOpen(false)}
+          onClose={closeUploadModal}
           onSendText={handleSendTextFromFile}
+          initialTextContent={uploadModalState.initialTextContent}
+          initialImageContent={uploadModalState.initialImageContent}
+          initialImageName={uploadModalState.initialImageName}
         />
       )}
     </>

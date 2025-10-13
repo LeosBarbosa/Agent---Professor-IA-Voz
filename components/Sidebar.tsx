@@ -2,65 +2,134 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { FunctionCall, useSettings, useUI, useTools, Template, useHistoryStore, useLogStore } from '@/lib/state';
+import { useHistoryStore, useLogStore } from '../lib/state';
 import c from 'classnames';
-import { AVAILABLE_VOICES } from '@/lib/constants';
-import { useLiveAPIContext } from '@/contexts/LiveAPIContext';
-import { useState } from 'react';
-import ToolEditorModal from './ToolEditorModal';
+import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
+import React, { useState, useRef, useEffect, memo } from 'react';
+import ConfirmationModal from './ConfirmationModal';
 
-export default function Sidebar() {
-  const { isSidebarOpen, toggleSidebar } = useUI();
-  const { systemPrompt, voice, setSystemPrompt, setVoice } =
-    useSettings();
-  const { tools, template, setTemplate, toggleTool, addTool, removeTool, updateTool } = useTools();
-  const { connected } = useLiveAPIContext();
+function Sidebar() {
+  const { connected, disconnect, recordingStatus } = useLiveAPIProvider();
 
-  const [editingTool, setEditingTool] = useState<FunctionCall | null>(null);
-
-  // New hooks for history
-  const { getSortedConversations, loadConversation, deleteConversation } = useHistoryStore();
+  const { getSortedConversations, loadConversation, deleteConversation, updateConversationTitle, togglePinConversation } = useHistoryStore();
   const { startNewConversation, currentConversationId } = useLogStore();
   const conversations = getSortedConversations();
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleSaveTool = (updatedTool: FunctionCall) => {
-    if (editingTool) {
-      updateTool(editingTool.name, updatedTool);
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
     }
-    setEditingTool(null);
+  }, [editingId]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openMenuId]);
+
+
+  const handleStartNew = async () => {
+    if (connected) {
+      disconnect();
+    }
+    await startNewConversation();
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta conversa?')) {
-      deleteConversation(id);
+  const handleLoad = async (id: string) => {
+    if (id === currentConversationId || loadingId) {
+      return;
     }
+
+    if (connected) {
+      disconnect();
+    }
+    setLoadingId(id);
+    await loadConversation(id);
+    setLoadingId(null);
   };
 
+  const filteredConversations = conversations.filter(conv => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) {
+      return true;
+    }
+
+    const titleMatch = conv.title.toLowerCase().includes(query);
+    if (titleMatch) {
+      return true;
+    }
+
+    const contentMatch = conv.turns.some(turn =>
+      turn.text.toLowerCase().includes(query)
+    );
+    return contentMatch;
+  });
+
+  const handleConfirmDelete = () => {
+    if (confirmDeleteId) {
+      deleteConversation(confirmDeleteId);
+    }
+    setConfirmDeleteId(null);
+  };
+  
+  const handlePinToggle = (id: string) => {
+    togglePinConversation(id);
+    setOpenMenuId(null);
+  };
+
+  const handleEdit = (id: string, title: string) => {
+    setEditingId(id);
+    setEditingTitle(title);
+    setOpenMenuId(null);
+  };
+
+  const handleSaveTitle = () => {
+    if (editingId && editingTitle.trim()) {
+      updateConversationTitle(editingId, editingTitle.trim());
+    }
+    setEditingId(null);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSaveTitle();
+    } else if (e.key === 'Escape') {
+      setEditingId(null);
+    }
+  };
+  
   return (
     <>
-      <aside className={c('sidebar', { open: isSidebarOpen })}>
-        <div className="sidebar-header">
-          <h3>Configurações</h3>
-          <button onClick={toggleSidebar} className="close-button">
-            <span className="icon">close</span>
-          </button>
-        </div>
+      <aside className="left-sidebar">
         <div className="sidebar-content">
           <div className="sidebar-section">
             <div className="history-header">
-              <h4 className="sidebar-section-title">Histórico</h4>
+              <div className="history-title-with-icon">
+                <span className="icon">forum</span>
+                <h4 className="sidebar-section-title">Histórico</h4>
+              </div>
               <button
                 className="new-chat-button"
-                onClick={startNewConversation}
-                disabled={connected}
+                onClick={handleStartNew}
+                disabled={recordingStatus !== 'idle'}
                 title="Iniciar nova conversa"
+                aria-label="Iniciar nova conversa"
               >
-                <span className="icon">add_comment</span>
+                <span className="icon">add</span>
               </button>
             </div>
             <div className="history-search">
@@ -69,132 +138,102 @@ export default function Sidebar() {
                 type="text"
                 placeholder="Pesquisar conversas..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                disabled={connected}
+                onChange={e => setSearchQuery(e.target.value)}
+                disabled={recordingStatus !== 'idle'}
               />
             </div>
             <div className="history-list">
-              {conversations.length === 0 ? (
-                <p className="no-history">Nenhuma conversa salva.</p>
-              ) : filteredConversations.length === 0 ? (
-                <p className="no-history">Nenhuma conversa encontrada.</p>
-              ) : (
-                filteredConversations.map(conv => (
+              {filteredConversations.length > 0 ? (
+                filteredConversations.map(conv => {
+                  const isLoadingThisItem = loadingId === conv.id;
+                  const isCurrentlyActive = conv.id === currentConversationId;
+                  const isAnythingLoading = loadingId !== null;
+
+                  return (
                   <div
                     key={conv.id}
                     className={c('history-item', {
-                      active: conv.id === currentConversationId,
+                      active: isCurrentlyActive && !isAnythingLoading,
+                      editing: editingId === conv.id,
                     })}
                   >
-                    <button
-                      className="history-item-title"
-                      onClick={() => loadConversation(conv.id)}
-                      disabled={connected}
-                    >
-                      {conv.title}
-                    </button>
+                    <div className="history-item-status">
+                      {isLoadingThisItem && <span className="spinner history-spinner"></span>}
+                      {isCurrentlyActive && !isAnythingLoading && <div className="active-indicator"></div>}
+                    </div>
+                    {editingId === conv.id ? (
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingTitle}
+                        onChange={e => setEditingTitle(e.target.value)}
+                        onBlur={handleSaveTitle}
+                        onKeyDown={handleEditKeyDown}
+                        className="history-item-input"
+                      />
+                    ) : (
+                      <button
+                        className="history-item-title"
+                        onClick={() => handleLoad(conv.id)}
+                        disabled={isAnythingLoading || recordingStatus !== 'idle'}
+                        title={conv.title}
+                      >
+                        {conv.isPinned && <span className="icon pin-icon" title="Conversa Fixada">push_pin</span>}
+                        <span>{conv.title}</span>
+                      </button>
+                    )}
                     <div className="history-item-actions">
                       <button
-                        onClick={() => handleDelete(conv.id)}
-                        disabled={connected}
-                        aria-label={`Excluir ${conv.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(prevId => prevId === conv.id ? null : conv.id)
+                        }}
+                        aria-label="Opções da conversa"
+                        className="history-menu-button"
+                        disabled={isAnythingLoading || recordingStatus !== 'idle'}
                       >
-                        <span className="icon">delete</span>
+                        <span className="icon">more_vert</span>
                       </button>
+                      {openMenuId === conv.id && (
+                        <div className="history-item-menu" ref={menuRef}>
+                          <button onClick={() => handlePinToggle(conv.id)}>
+                            <span className="icon">{conv.isPinned ? 'do_not_disturb_on' : 'push_pin'}</span>
+                            {conv.isPinned ? 'Desafixar' : 'Fixar'}
+                          </button>
+                          <button onClick={() => handleEdit(conv.id, conv.title)}>
+                            <span className="icon">edit</span>
+                            Renomear
+                          </button>
+                          <button className="delete-action" onClick={() => {
+                            setConfirmDeleteId(conv.id);
+                            setOpenMenuId(null);
+                          }}>
+                            <span className="icon">delete</span>
+                            Excluir
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))
+                )})
+              ) : (
+                <p className="no-history">Nenhuma conversa encontrada.</p>
               )}
             </div>
           </div>
-          <div className="sidebar-section">
-            <h4 className="sidebar-section-title">Configuração da Persona</h4>
-            <fieldset disabled={connected}>
-              <label>
-                Persona
-                <select value={template} onChange={e => setTemplate(e.target.value as Template)}>
-                  <option value="english-teacher">Professor de Inglês</option>
-                  <option value="industrial-professor">Consultor de Indústria</option>
-                </select>
-              </label>
-              <label>
-                Prompt do Sistema
-                <textarea
-                  value={systemPrompt}
-                  onChange={e => setSystemPrompt(e.target.value)}
-                  rows={10}
-                  placeholder="Descreva o papel e a personalidade da IA..."
-                />
-              </label>
-              <label>
-                Voz
-                <select value={voice} onChange={e => setVoice(e.target.value)}>
-                  {AVAILABLE_VOICES.map(v => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </fieldset>
-          </div>
-          <div className="sidebar-section">
-            <h4 className="sidebar-section-title">Ferramentas</h4>
-            <div className="tools-list">
-              {tools.map(tool => (
-                <div key={tool.name} className="tool-item">
-                  <label className="tool-checkbox-wrapper">
-                    <input
-                      type="checkbox"
-                      id={`tool-checkbox-${tool.name}`}
-                      checked={tool.isEnabled}
-                      onChange={() => toggleTool(tool.name)}
-                      disabled={connected}
-                    />
-                    <span className="checkbox-visual"></span>
-                  </label>
-                  <label
-                    htmlFor={`tool-checkbox-${tool.name}`}
-                    className="tool-name-text"
-                  >
-                    {tool.name}
-                  </label>
-                  <div className="tool-actions">
-                    <button
-                      onClick={() => setEditingTool(tool)}
-                      disabled={connected}
-                      aria-label={`Editar ${tool.name}`}
-                    >
-                      <span className="icon">edit</span>
-                    </button>
-                    <button
-                      onClick={() => removeTool(tool.name)}
-                      disabled={connected}
-                      aria-label={`Excluir ${tool.name}`}
-                    >
-                      <span className="icon">delete</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={addTool}
-              className="add-tool-button"
-              disabled={connected}
-            >
-              <span className="icon">add</span> Adicionar chamada de função
-            </button>
-          </div>
         </div>
       </aside>
-      {editingTool && (
-        <ToolEditorModal
-          tool={editingTool}
-          onClose={() => setEditingTool(null)}
-          onSave={handleSaveTool}
+      {confirmDeleteId && (
+        <ConfirmationModal
+          title="Excluir Conversa"
+          message="Tem certeza que deseja excluir esta conversa permanentemente? Esta ação não pode ser desfeita."
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmDeleteId(null)}
+          confirmText="Excluir"
         />
       )}
     </>
   );
 }
+
+export default memo(Sidebar);

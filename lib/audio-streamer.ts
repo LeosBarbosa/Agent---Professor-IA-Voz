@@ -34,17 +34,26 @@ export class AudioStreamer {
   private checkInterval: number | null = null;
   private scheduledTime: number = 0;
   private initialBufferTime: number = 0.1; //0.1 // 100ms initial buffer
-  // Web Audio API nodes. source => gain => destination
+  // Web Audio API nodes. source => gain => analyser => destination
   public gainNode: GainNode;
+  public analyserNode: AnalyserNode;
   public source: AudioBufferSourceNode;
   private endOfQueueAudioSource: AudioBufferSourceNode | null = null;
+  public mediaStreamDestinationNode: MediaStreamAudioDestinationNode;
+  public outputStream: MediaStream;
 
   public onComplete = () => {};
 
   constructor(public context: AudioContext) {
     this.gainNode = this.context.createGain();
+    this.analyserNode = this.context.createAnalyser();
     this.source = this.context.createBufferSource();
-    this.gainNode.connect(this.context.destination);
+    this.mediaStreamDestinationNode =
+      this.context.createMediaStreamDestination();
+    this.outputStream = this.mediaStreamDestinationNode.stream;
+    this.gainNode.connect(this.analyserNode);
+    this.analyserNode.connect(this.context.destination);
+    this.analyserNode.connect(this.mediaStreamDestinationNode);
     this.addPCM16 = this.addPCM16.bind(this);
   }
 
@@ -199,71 +208,24 @@ export class AudioStreamer {
         }
       } else {
         if (!this.checkInterval) {
-          this.checkInterval = window.setInterval(() => {
-            if (this.audioQueue.length > 0) {
-              this.scheduleNextBuffer();
-            }
-          }, 100) as unknown as number;
+          this.checkInterval = window.setInterval(
+            () => this.scheduleNextBuffer(),
+            100,
+          );
         }
       }
-    } else {
-      const nextCheckTime =
-        (this.scheduledTime - this.context.currentTime) * 1000;
-      setTimeout(
-        () => this.scheduleNextBuffer(),
-        Math.max(0, nextCheckTime - 50)
-      );
     }
   }
 
   stop() {
-    this.isPlaying = false;
-    this.isStreamComplete = true;
     this.audioQueue = [];
-    this.scheduledTime = this.context.currentTime;
+    this.isStreamComplete = true;
+    this.isPlaying = false;
+    this.scheduledTime = 0;
 
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-
-    this.gainNode.gain.linearRampToValueAtTime(
-      0,
-      this.context.currentTime + 0.1
-    );
-
-    setTimeout(() => {
-      this.gainNode.disconnect();
-      this.gainNode = this.context.createGain();
-      this.gainNode.connect(this.context.destination);
-    }, 200);
-  }
-
-  async resume() {
-    if (this.context.state === 'suspended') {
-      await this.context.resume();
-    }
-    this.isStreamComplete = false;
-    this.scheduledTime = this.context.currentTime + this.initialBufferTime;
-    this.gainNode.gain.setValueAtTime(1, this.context.currentTime);
-  }
-
-  complete() {
-    this.isStreamComplete = true;
-    this.onComplete();
   }
 }
-
-// // Usage example:
-// const audioStreamer = new AudioStreamer();
-//
-// // In your streaming code:
-// function handleChunk(chunk: Uint8Array) {
-//   audioStreamer.handleChunk(chunk);
-// }
-//
-// // To start playing (call this in response to a user interaction)
-// await audioStreamer.resume();
-//
-// // To stop playing
-// // audioStreamer.stop();

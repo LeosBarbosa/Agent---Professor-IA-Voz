@@ -2,106 +2,40 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { useEffect, useRef, useState } from 'react';
-import PopUp from '../popup/PopUp';
+import { useEffect, useRef, memo } from 'react';
 import WelcomeScreen from '../welcome-screen/WelcomeScreen';
-// FIX: Import LiveServerContent to correctly type the content handler.
-import { LiveConnectConfig, Modality, LiveServerContent } from '@google/genai';
+import { LiveServerContent } from '@google/genai';
 
-import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
-import {
-  useSettings,
-  useLogStore,
-  useTools,
-  ConversationTurn,
-} from '@/lib/state';
+import { useLiveAPIProvider } from '../../../contexts/LiveAPIContext';
+import { useLogStore, useUI } from '../../../lib/state';
+import AgentAvatar from './AgentAvatar';
+import WaveformVisualizer from '../waveform-visualizer/WaveformVisualizer';
+import TurnEntry from './TurnEntry';
+import ChatSearch from './ChatSearch';
 
-const formatTimestamp = (date: Date) => {
-  const pad = (num: number, size = 2) => num.toString().padStart(size, '0');
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  const seconds = pad(date.getSeconds());
-  const milliseconds = pad(date.getMilliseconds(), 3);
-  return `${hours}:${minutes}:${seconds}.${milliseconds}`;
-};
-
-const renderContent = (text: string) => {
-  // Split by ```json...``` code blocks
-  const parts = text.split(/(`{3}json\n[\s\S]*?\n`{3})/g);
-
-  return parts.map((part, index) => {
-    if (part.startsWith('```json')) {
-      const jsonContent = part.replace(/^`{3}json\n|`{3}$/g, '');
-      return (
-        <pre key={index}>
-          <code>{jsonContent}</code>
-        </pre>
-      );
-    }
-
-    // Split by **bold** text
-    const boldParts = part.split(/(\*\*.*?\*\*)/g);
-    return boldParts.map((boldPart, boldIndex) => {
-      if (boldPart.startsWith('**') && boldPart.endsWith('**')) {
-        return <strong key={boldIndex}>{boldPart.slice(2, -2)}</strong>;
-      }
-      return boldPart;
-    });
-  });
-};
-
-
-export default function StreamingConsole() {
-  const { client, setConfig } = useLiveAPIContext();
-  const { systemPrompt, voice } = useSettings();
-  const { tools } = useTools();
+function StreamingConsole() {
+  const {
+    client,
+    volume,
+    inputAnalyser,
+    outputAnalyser,
+    muted,
+  } = useLiveAPIProvider();
   const turns = useLogStore(state => state.turns);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showPopUp, setShowPopUp] = useState(true);
-
-  const handleClosePopUp = () => {
-    setShowPopUp(false);
-  };
-
-  // Set the configuration for the Live API
-  useEffect(() => {
-    const enabledTools = tools
-      .filter(tool => tool.isEnabled)
-      .map(tool => ({
-        functionDeclarations: [
-          {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        ],
-      }));
-
-    // Using `any` for config to accommodate `speechConfig`, which is not in the
-    // current TS definitions but is used in the working reference example.
-    const config: any = {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: voice,
-          },
-        },
-      },
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-      systemInstruction: {
-        parts: [
-          {
-            text: systemPrompt,
-          },
-        ],
-      },
-      tools: enabledTools,
-    };
-
-    setConfig(config);
-  }, [setConfig, systemPrompt, tools, voice]);
+  const {
+    view,
+    isAgentThinking,
+    setIsAgentThinking,
+    setConfidence,
+    isSearchOpen,
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    setSearchResults,
+    currentSearchResultIndex,
+    setCurrentSearchResultIndex,
+  } = useUI();
 
   useEffect(() => {
     const { addTurn, updateLastTurn, markLastUserTurnAsRead } =
@@ -109,7 +43,7 @@ export default function StreamingConsole() {
 
     const handleInputTranscription = (text: string, isFinal: boolean) => {
       const turns = useLogStore.getState().turns;
-      const last = turns[turns.length - 1];
+      const last = turns.at(-1);
       if (last && last.role === 'user' && !last.isFinal) {
         updateLastTurn({
           text: last.text + text,
@@ -118,11 +52,22 @@ export default function StreamingConsole() {
       } else {
         addTurn({ role: 'user', text, isFinal });
       }
+      if (isFinal) {
+        setConfidence(c => Math.min(100, c + 1));
+      }
     };
+
+    const encouragingKeywords =
+      /\b(Excellent|Great job|Well done|Perfect|Fantastic|Ótimo trabalho|Perfeito|Excelente)\b/i;
 
     const handleOutputTranscription = (text: string, isFinal: boolean) => {
       const turns = useLogStore.getState().turns;
-      const last = turns[turns.length - 1];
+      const last = turns.at(-1);
+
+      if (encouragingKeywords.test(text)) {
+        setConfidence(c => Math.min(100, c + 5));
+      }
+
       if (last && last.role === 'agent' && !last.isFinal) {
         updateLastTurn({
           text: last.text + text,
@@ -134,43 +79,29 @@ export default function StreamingConsole() {
       }
     };
 
-    // FIX: The 'content' event provides a single LiveServerContent object.
-    // The function signature is updated to accept one argument, and groundingMetadata is extracted from it.
     const handleContent = (serverContent: LiveServerContent) => {
-      const text =
-        serverContent.modelTurn?.parts
-          ?.map((p: any) => p.text)
-          .filter(Boolean)
-          .join(' ') ?? '';
       const groundingChunks = serverContent.groundingMetadata?.groundingChunks;
 
-      if (!text && !groundingChunks) return;
+      if (!groundingChunks) {
+        return;
+      }
 
-      const turns = useLogStore.getState().turns;
-      // FIX: Property 'at' does not exist on type 'ConversationTurn[]'. Changed to use index access.
-      const last = turns[turns.length - 1];
+      const { turns, updateLastTurn } = useLogStore.getState();
+      const last = turns.at(-1);
 
-      if (last?.role === 'agent' && !last.isFinal) {
-        const updatedTurn: Partial<ConversationTurn> = {
-          text: last.text + text,
-        };
-        if (groundingChunks) {
-          updatedTurn.groundingChunks = [
+      if (last?.role === 'agent') {
+        updateLastTurn({
+          groundingChunks: [
             ...(last.groundingChunks || []),
             ...groundingChunks,
-          ];
-        }
-        updateLastTurn(updatedTurn);
-      } else {
-        markLastUserTurnAsRead();
-        addTurn({ role: 'agent', text, isFinal: false, groundingChunks });
+          ],
+        });
       }
     };
 
     const handleTurnComplete = () => {
-      // FIX: Property 'at' does not exist on type 'ConversationTurn[]'. Changed to use index access.
       const turns = useLogStore.getState().turns;
-      const last = turns[turns.length - 1];
+      const last = turns.at(-1);
       if (last && !last.isFinal) {
         updateLastTurn({ isFinal: true });
       }
@@ -187,77 +118,135 @@ export default function StreamingConsole() {
       client.off('content', handleContent);
       client.off('turncomplete', handleTurnComplete);
     };
-  }, [client]);
+  }, [client, setConfidence]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [turns]);
+  }, [turns, isAgentThinking]);
+
+  useEffect(() => {
+    const lastTurn = turns.at(-1);
+    if (lastTurn?.role === 'user' && lastTurn.isFinal) {
+      setIsAgentThinking(true);
+    } else if (lastTurn?.role === 'agent') {
+      setIsAgentThinking(false);
+    }
+  }, [turns, setIsAgentThinking]);
+
+  // Search logic
+  const escapeRegExp = (string: string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  // Effect to run search and update results array
+  useEffect(() => {
+    if (!isSearchOpen || !searchQuery) {
+      setSearchResults([]);
+      return;
+    }
+
+    const results: { turnIndex: number; matchIndex: number }[] = [];
+    const safeQuery = escapeRegExp(searchQuery);
+    const regex = new RegExp(safeQuery, 'gi');
+
+    turns.forEach((turn, turnIndex) => {
+      const matches = [...turn.text.matchAll(regex)];
+      matches.forEach((_, matchIndex) => {
+        results.push({ turnIndex, matchIndex });
+      });
+    });
+
+    setSearchResults(results);
+  }, [searchQuery, turns, isSearchOpen, setSearchResults]);
+
+  // Effect to update the current result index when the results array changes
+  useEffect(() => {
+    setCurrentSearchResultIndex(searchResults.length > 0 ? 0 : -1);
+  }, [searchResults, setCurrentSearchResultIndex]);
+
+
+  const handleSearchNavigate = (direction: 'next' | 'prev') => {
+    if (searchResults.length === 0) return;
+    const nextIndex =
+      direction === 'next'
+        ? (currentSearchResultIndex + 1) % searchResults.length
+        : (currentSearchResultIndex - 1 + searchResults.length) %
+          searchResults.length;
+    setCurrentSearchResultIndex(nextIndex);
+  };
+
+  useEffect(() => {
+    if (currentSearchResultIndex < 0 || !scrollRef.current) return;
+
+    const currentMatchElement = scrollRef.current.querySelector(
+      `mark[data-global-match-index="${currentSearchResultIndex}"]`,
+    );
+
+    if (currentMatchElement) {
+      currentMatchElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [currentSearchResultIndex]);
+
+  const isSpeaking = volume > 0.01;
+  const isListening = !muted;
+  const activeAnalyser = isSpeaking
+    ? outputAnalyser
+    : isListening
+      ? inputAnalyser
+      : null;
+  const waveformColor = isSpeaking
+    ? 'var(--accent-green)'
+    : 'var(--accent-blue)';
 
   return (
-    <div className="transcription-container">
-      {showPopUp && <PopUp onClose={handleClosePopUp} />}
+    <>
+      {isSearchOpen && (
+        <ChatSearch
+          onNavigate={handleSearchNavigate}
+          onQueryChange={setSearchQuery}
+        />
+      )}
+      {turns.length > 0 && view === 'chat' && (
+        <AgentAvatar volume={volume} isAgentThinking={isAgentThinking} />
+      )}
       {turns.length === 0 ? (
         <WelcomeScreen />
       ) : (
         <div className="transcription-view" ref={scrollRef}>
           {turns.map((t, i) => (
-            <div
-              key={i}
-              className={`transcription-entry ${t.role} ${!t.isFinal ? 'interim' : ''
-                }`}
-            >
+            <TurnEntry key={`${t.timestamp.getTime()}-${i}`} turn={t} turnIndex={i} />
+          ))}
+          {isAgentThinking && (
+            <div className="transcription-entry agent thinking">
               <div className="transcription-header">
-                <div className="transcription-source">
-                  {t.role === 'user'
-                    ? 'Você'
-                    : t.role === 'agent'
-                      ? 'Agente'
-                      : 'Sistema'}
-                </div>
-                <div className="transcription-meta">
-                  <div className="transcription-timestamp">
-                    {formatTimestamp(t.timestamp)}
-                  </div>
-                  {t.role === 'user' && (
-                    <div className="read-receipt">
-                      {t.isRead ? (
-                        <span className="icon read">done_all</span>
-                      ) : t.isFinal ? (
-                        <span className="icon sent">done</span>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
+                <div className="transcription-source">Agente</div>
               </div>
               <div className="transcription-text-content">
-                {renderContent(t.text)}
-              </div>
-              {t.groundingChunks && t.groundingChunks.length > 0 && (
-                <div className="grounding-chunks">
-                  <strong>Fontes:</strong>
-                  <ul>
-                    {t.groundingChunks
-                      .filter(chunk => chunk.web && chunk.web.uri)
-                      .map((chunk, index) => (
-                        <li key={index}>
-                          <a
-                            href={chunk.web!.uri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {chunk.web!.title || chunk.web!.uri}
-                          </a>
-                        </li>
-                      ))}
-                  </ul>
+                <div className="thinking-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
                 </div>
-              )}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
-    </div>
+      <div className="waveform-container">
+        {activeAnalyser && (
+          <WaveformVisualizer
+            analyserNode={activeAnalyser}
+            barColor={waveformColor}
+          />
+        )}
+      </div>
+    </>
   );
 }
+
+export default memo(StreamingConsole);

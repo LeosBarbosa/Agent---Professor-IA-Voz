@@ -4,9 +4,53 @@
 */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { englishTeacherTools, industrialProfessorTools } from './tools/career-mentor';
+import { FunctionResponseScheduling } from '@google/genai';
+import { DEFAULT_LIVE_API_MODEL, MALE_VOICES, FEMALE_VOICES } from './constants';
+import { personaConfig as defaultPersonas } from './personas';
 
-export type Template = 'english-teacher' | 'industrial-professor';
+// Type definitions
+
+export interface Schema {
+  type: string;
+  properties?: { [key: string]: Schema };
+  description?: string;
+  required?: string[];
+  items?: Schema;
+}
+
+export interface FunctionCall {
+  name: string;
+  description: string;
+  parameters: Schema;
+  isEnabled: boolean;
+  scheduling: FunctionResponseScheduling;
+}
+
+export interface GroundingChunk {
+  web?: {
+    uri?: string;
+    title?: string;
+  };
+}
+
+export interface ConversationTurn {
+  role: 'user' | 'agent' | 'system';
+  text: string;
+  isFinal: boolean;
+  timestamp: Date;
+  isRead?: boolean;
+  groundingChunks?: GroundingChunk[];
+  image?: string | null;
+  sourceFile?: { name: string; id: string };
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  turns: ConversationTurn[];
+  lastModified: number;
+  isPinned?: boolean;
+}
 
 export interface WelcomePrompt {
   title: string;
@@ -14,386 +58,498 @@ export interface WelcomePrompt {
   prompt: string;
 }
 
-export const personaConfig: Record<Template, {
+export interface Persona {
+  id: string;
+  name: string;
+  icon: string;
+  tagline: string;
+  description: string;
   systemPrompt: string;
+  tools: FunctionCall[];
   header: { title: string; subtitle: string };
-  welcome: { title: string; description: string; prompts: WelcomePrompt[] };
-  popup: { title: string; p1: string; p2: string };
-}> = {
-  'english-teacher': {
-    systemPrompt: "Você é um professor de inglês amigável e experiente chamado Alex, com uma abordagem prática e altamente personalizada. Seu objetivo principal é ajudar o usuário a ganhar fluência e confiança em inglês, focando em conversação e escrita.\n\n**Sua metodologia de ensino é baseada em 3 pilares:**\n\n1.  **Feedback Construtivo e Detalhado:** Ao identificar um erro, não apenas corrija. **Sempre** ofereça uma explicação clara e concisa sobre o porquê de ser um erro (regra gramatical, uso inadequado de vocabulário, etc.). Em seguida, **imediatamente** forneça um ou dois exemplos corretos e um mini-exercício de fixação (ex: \"Tente criar uma frase usando esta palavra corretamente\" ou \"Complete a seguinte frase...\"). Este ciclo de correção-explicação-prática é fundamental.\n\n2.  **Adaptação Dinâmica:** Monitore constantemente o nível de inglês do aluno. Se ele estiver com dificuldades, simplifique a linguagem e os conceitos. Se estiver progredindo bem, introduza vocabulário mais avançado, expressões idiomáticas comuns (ex: 'bite the bullet', 'hit the nail on the head') e estruturas gramaticais mais complexas para desafiá-lo. Sua meta é manter o aluno na zona de desenvolvimento proximal, onde o aprendizado é mais eficaz.\n\n3.  **Contextualização e Encorajamento:** Inicie a conversa de forma casual e amigável. Use perguntas abertas para estimular o diálogo. Mantenha um tom paciente e encorajador, celebrando cada progresso. Responda primariamente em inglês, mas não hesite em usar o português para explicações gramaticais mais complexas, garantindo a total compreensão do aluno. O objetivo é a comunicação eficaz e a construção da confiança.",
-    header: {
-      title: 'English Teacher Sandbox',
-      subtitle: 'Converse com Alex, seu professor de inglês particular.',
-    },
-    welcome: {
-      title: 'Tutor de Língua Inglesa',
-      description: "Olá! Sou Alex, seu tutor de inglês particular. Pronto para praticar suas habilidades de conversação? Vamos conversar!",
-      prompts: [
-        {
-          title: 'Correção Gramatical',
-          description: 'Peça ao Alex para corrigir suas frases e explicar as regras por trás das correções para um aprendizado eficaz.',
-          prompt: 'Please correct this sentence: "I have went to the store yesterday."',
-        },
-        {
-          title: 'Expansão de Vocabulário',
-          description: 'Descubra novas palavras, sinônimos e expressões idiomáticas para enriquecer sua comunicação.',
-          prompt: 'What are some other ways to say "very happy"?',
-        },
-        {
-          title: 'Conversação Livre',
-          description: 'Inicie um bate-papo casual sobre um tópico de seu interesse, como viagens, hobbies ou trabalho, e pratique sua fluência.',
-          prompt: 'Can we talk about my last vacation to Brazil?',
-        },
-      ],
-    },
-    popup: {
-      title: 'Bem-vindo ao English Teacher Sandbox',
-      p1: 'Seu espaço para praticar inglês com um tutor de IA.',
-      p2: 'Para começar:',
-    },
+  welcome: { title: string; description: string; prompts: WelcomePrompt[], tips?: string[] };
+  speechRate: number;
+  isDefault?: boolean;
+}
+
+interface UploadModalState {
+  isOpen: boolean;
+  initialTextContent: string;
+  initialImageContent: string | null;
+  initialImageName: string;
+}
+
+// UI Store
+interface UIState {
+  isSettingsOpen: boolean;
+  toggleSettings: () => void;
+  isHistoryOpen: boolean;
+  toggleHistory: () => void;
+  view: 'home' | 'chat';
+  setView: (view: 'home' | 'chat') => void;
+  isAgentThinking: boolean;
+  setIsAgentThinking: (isThinking: boolean) => void;
+  isPresentationMode: boolean;
+  togglePresentationMode: () => void;
+  isFocusMode: boolean;
+  toggleFocusMode: () => void;
+  confidence: number;
+  setConfidence: (updater: (prevConfidence: number) => number) => void;
+  isPersonaManagementOpen: boolean;
+  togglePersonaManagement: () => void;
+  isWelcomeModalOpen: boolean;
+  setWelcomeModalOpen: (isOpen: boolean) => void;
+  isPiPMode: boolean;
+  togglePiPMode: () => void;
+  setIsPiPMode: (isPiP: boolean) => void;
+  uploadModalState: UploadModalState;
+  openUploadModal: (initialContent: { text?: string; image?: string | null, imageName?: string }) => void;
+  closeUploadModal: () => void;
+  isSearchOpen: boolean;
+  searchQuery: string;
+  searchResults: { turnIndex: number; matchIndex: number }[];
+  currentSearchResultIndex: number;
+  toggleSearch: () => void;
+  setSearchQuery: (query: string) => void;
+  setSearchResults: (results: { turnIndex: number; matchIndex: number }[]) => void;
+  setCurrentSearchResultIndex: (index: number) => void;
+}
+
+export const useUI = create<UIState>()((set) => ({
+  isSettingsOpen: false,
+  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+  isHistoryOpen: true,
+  toggleHistory: () => set((state) => ({ isHistoryOpen: !state.isHistoryOpen })),
+  view: 'home',
+  setView: (view) => set({ view, isAgentThinking: false, confidence: 0 }),
+  isAgentThinking: false,
+  setIsAgentThinking: (isAgentThinking) => set({ isAgentThinking }),
+  isPresentationMode: false,
+  togglePresentationMode: () => set((state) => ({ isPresentationMode: !state.isPresentationMode })),
+  isFocusMode: false,
+  toggleFocusMode: () => set((state) => ({ isFocusMode: !state.isFocusMode })),
+  confidence: 0,
+  setConfidence: (updater) => set((state) => ({ confidence: updater(state.confidence) })),
+  isPersonaManagementOpen: false,
+  togglePersonaManagement: () => set((state) => ({ isPersonaManagementOpen: !state.isPersonaManagementOpen })),
+  isWelcomeModalOpen: !localStorage.getItem('gemini-live-sandbox-visited'),
+  setWelcomeModalOpen: (isOpen) => {
+    set({ isWelcomeModalOpen: isOpen });
+    if (!isOpen) {
+      localStorage.setItem('gemini-live-sandbox-visited', 'true');
+    }
   },
-  'industrial-professor': {
-    systemPrompt: `Você é o Professor Barros, um acadêmico e especialista em Engenharia de Produção, com foco em Gestão de Processos e da Produção. Sua missão é atuar como um professor e mentor, guiando os usuários na análise e otimização de operações industriais e de distribuição, combinando rigor teórico com aplicabilidade prática.
-
-**Seus principais conhecimentos e atividades são:**
-- **Otimização de Processos:** Identificar gargalos, ineficiências e oportunidades de melhoria nos fluxos de trabalho.
-- **Planejamento e Controle da Produção:** Gerenciar recursos (materiais, mão de obra, maquinário), definir padrões de qualidade e monitorar o desempenho da produção.
-- **Logística:** Gerenciar cadeias de suprimentos e a distribuição de produtos.
-- **Análise de Dados:** Utilizar dados e indicadores para avaliar a performance dos processos e tomar decisões estratégicas.
-
-Comunique-se de forma didática e profissional, como um professor. Use analogias, casos de estudo e dados para ilustrar seus pontos. Responda principalmente em português.
-
-**Sua abordagem pedagógica para análise de cenários é:**
-1.  **Diagnóstico:** Proponha uma abordagem passo a passo para diagnosticar problemas, incluindo:
-    - Mapeamento do fluxo de valor (VSM) para identificar gargalos.
-    - Avaliação de indicadores-chave: lead time, taxa de serviço (OTIF), níveis de estoque, custo por unidade.
-    - Investigação de causas raiz com ferramentas como 5 Porquês e Diagrama de Ishikawa.
-2.  **Solução:** Guie na formulação de sugestões de melhorias com impacto mensurável, priorizadas por custo e benefício.
-3.  **Implementação:** Discuta exemplos práticos, cronogramas realistas e critérios de acompanhamento.
-
-Sempre conecte as decisões operacionais aos resultados financeiros (margem, giro de estoque, ROI) e discuta riscos e planos de contingência.`,
-    header: {
-      title: 'Sandbox de Processos Industriais',
-      subtitle: 'Converse com o Professor Barros, seu especialista em indústria e distribuição.',
-    },
-    welcome: {
-      title: 'Consultor de Indústria e Distribuição',
-      description: 'Sou o Professor Barros, seu especialista em processos industriais e no setor de atacado distribuidor. Como posso ajudá-lo hoje?',
-      prompts: [
-        {
-          title: 'Manufatura Enxuta',
-          description: 'Explore os conceitos fundamentais do Lean Manufacturing para eliminar desperdícios e aumentar a eficiência.',
-          prompt: 'Quais são os princípios do Lean Manufacturing?',
-        },
-        {
-          title: 'Gestão de Estoque',
-          description: 'Aprenda a classificar itens de estoque para otimizar o controle, reduzir custos e melhorar o fluxo de caixa.',
-          prompt: 'Como a análise ABC pode otimizar a gestão de estoque?',
-        },
-        {
-          title: 'Sistemas de Produção',
-          description: 'Entenda como o sistema JIT funciona para minimizar o inventário e aumentar a eficiência na produção.',
-          prompt: 'Explique o conceito de Just-in-Time (JIT) na produção.',
-        },
-        {
-          title: 'Logística Otimizada',
-          description: 'Descubra como o cross-docking pode agilizar sua cadeia de suprimentos, reduzindo custos de armazenagem.',
-          prompt: 'O que é "cross-docking"?',
-        },
-      ],
-    },
-    popup: {
-      title: 'Bem-vindo ao Sandbox de Processos Industriais',
-      p1: 'Seu ponto de partida para otimizar operações com IA.',
-      p2: 'Para começar:',
-    },
+  isPiPMode: false,
+  togglePiPMode: () => set((state) => ({ isPiPMode: !state.isPiPMode })),
+  setIsPiPMode: (isPiP) => set({ isPiPMode: isPiP }),
+  uploadModalState: {
+    isOpen: false,
+    initialTextContent: '',
+    initialImageContent: null,
+    initialImageName: '',
   },
-};
+  openUploadModal: (initialContent) => set({
+    uploadModalState: {
+      isOpen: true,
+      initialTextContent: initialContent.text || '',
+      initialImageContent: initialContent.image || null,
+      initialImageName: initialContent.imageName || '',
+    }
+  }),
+  closeUploadModal: () => set({
+    uploadModalState: {
+      isOpen: false,
+      initialTextContent: '',
+      initialImageContent: null,
+      initialImageName: '',
+    }
+  }),
+  isSearchOpen: false,
+  searchQuery: '',
+  searchResults: [],
+  currentSearchResultIndex: -1,
+  toggleSearch: () =>
+    set(state => ({
+      isSearchOpen: !state.isSearchOpen,
+      searchQuery: '',
+      searchResults: [],
+      currentSearchResultIndex: -1,
+    })),
+  setSearchQuery: searchQuery => set({ searchQuery }),
+  setSearchResults: searchResults => set({ searchResults }),
+  setCurrentSearchResultIndex: currentSearchResultIndex =>
+    set({ currentSearchResultIndex }),
+}));
 
-const toolsets: Record<Template, FunctionCall[]> = {
-  'english-teacher': englishTeacherTools,
-  'industrial-professor': industrialProfessorTools,
-};
+// File Store
+interface File {
+  name: string;
+  content: string;
+}
 
-import { DEFAULT_LIVE_API_MODEL, DEFAULT_VOICE } from './constants';
-import {
-  FunctionResponse,
-  FunctionResponseScheduling,
-  LiveServerToolCall,
-} from '@google/genai';
+interface FileStoreState {
+  files: File[];
+  addFile: (file: File) => void;
+  removeFile: (fileName: string) => void;
+  clearFiles: () => void;
+}
 
-/**
- * Settings
- */
-export const useSettings = create<{
+export const useFileStore = create<FileStoreState>()((set) => ({
+  files: [],
+  addFile: (file) => set((state) => ({ files: [...state.files, file] })),
+  removeFile: (fileName) => set((state) => ({ files: state.files.filter((f) => f.name !== fileName) })),
+  clearFiles: () => set({ files: [] }),
+}));
+
+// Settings Store
+interface SettingsState {
   systemPrompt: string;
   model: string;
   voice: string;
+  voiceGender: 'male' | 'female';
+  speechRate: number;
+  debugMode: boolean;
   setSystemPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
   setVoice: (voice: string) => void;
-}>(set => ({
-  systemPrompt: personaConfig['english-teacher'].systemPrompt,
-  model: DEFAULT_LIVE_API_MODEL,
-  voice: DEFAULT_VOICE,
-  setSystemPrompt: prompt => set({ systemPrompt: prompt }),
-  setModel: model => set({ model }),
-  setVoice: voice => set({ voice }),
-}));
-
-/**
- * UI
- */
-export const useUI = create<{
-  isSidebarOpen: boolean;
-  toggleSidebar: () => void;
-}>(set => ({
-  isSidebarOpen: true,
-  toggleSidebar: () => set(state => ({ isSidebarOpen: !state.isSidebarOpen })),
-}));
-
-/**
- * Tools
- */
-export interface FunctionCall {
-  name: string;
-  description?: string;
-  parameters?: any;
-  isEnabled: boolean;
-  scheduling?: FunctionResponseScheduling;
+  setVoiceGender: (gender: 'male' | 'female') => void;
+  setSpeechRate: (rate: number) => void;
+  toggleDebugMode: () => void;
 }
 
+export const useSettings = create<SettingsState>()((set, get) => ({
+  systemPrompt: '', // Will be initialized by usePersonaStore
+  model: DEFAULT_LIVE_API_MODEL,
+  voice: MALE_VOICES[0],
+  voiceGender: 'male',
+  speechRate: 1.0,
+  debugMode: false,
+  setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
+  setModel: (model) => set({ model }),
+  setVoice: (voice) => set({ voice }),
+  setVoiceGender: (voiceGender) => set({ voiceGender, voice: (voiceGender === 'male' ? MALE_VOICES : FEMALE_VOICES)[0] }),
+  setSpeechRate: (speechRate) => set({ speechRate }),
+  toggleDebugMode: () => set(state => ({ debugMode: !state.debugMode })),
+}));
 
+// Persona Store
+interface PersonaState {
+  personas: Persona[];
+  activePersona: Persona | null;
+  setActivePersonaById: (id: string | null) => void;
+  addPersona: (newPersona: Omit<Persona, 'id' | 'isDefault'>) => Persona;
+  updatePersona: (id: string, updatedPersona: Partial<Persona>) => void;
+  deletePersona: (id: string) => void;
+  resetToDefaults: () => void;
+}
+export const usePersonaStore = create<PersonaState>()(
+  persist(
+    (set, get) => ({
+      personas: defaultPersonas,
+      activePersona: null,
+      setActivePersonaById: (id) => {
+        const persona = get().personas.find(p => p.id === id);
+        if (persona) {
+          set({ activePersona: persona });
+          useSettings.getState().setSystemPrompt(persona.systemPrompt);
+          useSettings.getState().setSpeechRate(persona.speechRate);
+          useTools.getState().setTools(persona.tools);
+          useFileStore.getState().clearFiles();
+        } else {
+          set({ activePersona: null });
+        }
+      },
+      addPersona: (newPersonaData) => {
+        const newPersona: Persona = {
+          ...newPersonaData,
+          id: `persona_${Date.now()}`,
+          isDefault: false,
+        };
+        set(state => ({ personas: [...state.personas, newPersona] }));
+        return newPersona;
+      },
+      updatePersona: (id, updatedData) => {
+        set(state => ({
+          personas: state.personas.map(p => p.id === id ? { ...p, ...updatedData } : p)
+        }));
+      },
+      deletePersona: (id) => {
+        set(state => ({
+          personas: state.personas.filter(p => p.id !== id && !p.isDefault)
+        }));
+        if (get().activePersona?.id === id) {
+          get().setActivePersonaById(null);
+          useUI.getState().setView('home');
+        }
+      },
+      resetToDefaults: () => {
+        set({ personas: defaultPersonas });
+      }
+    }),
+    {
+      name: 'gemini-persona-sandbox-storage',
+      storage: createJSONStorage(() => localStorage),
+    }
+  )
+);
 
-export const useTools = create<{
+// Tools Store (now simplified to hold tools for the active persona)
+interface ToolsState {
   tools: FunctionCall[];
-  template: Template;
-  setTemplate: (template: Template) => void;
-  toggleTool: (toolName: string) => void;
-  addTool: () => void;
-  removeTool: (toolName: string) => void;
-  updateTool: (oldName: string, updatedTool: FunctionCall) => void;
-}>(set => ({
-  tools: toolsets['english-teacher'],
-  template: 'english-teacher',
-  setTemplate: (template: Template) => {
-    set({ tools: toolsets[template], template });
-    useSettings.getState().setSystemPrompt(personaConfig[template].systemPrompt);
-  },
-  toggleTool: (toolName: string) =>
-    set(state => ({
-      tools: state.tools.map(tool =>
-        tool.name === toolName ? { ...tool, isEnabled: !tool.isEnabled } : tool,
+  setTools: (tools: FunctionCall[]) => void;
+  toggleTool: (name: string) => void;
+  addTool: () => FunctionCall;
+  removeTool: (name: string) => void;
+  updateTool: (name: string, updatedTool: FunctionCall) => void;
+}
+
+export const useTools = create<ToolsState>()((set, get) => ({
+  tools: [],
+  setTools: (tools) => set({ tools }),
+  toggleTool: (name) =>
+    set((state) => ({
+      tools: state.tools.map((tool) =>
+        tool.name === name ? { ...tool, isEnabled: !tool.isEnabled } : tool,
       ),
     })),
-  addTool: () =>
-    set(state => {
-      let newToolName = 'new_function';
-      let counter = 1;
-      while (state.tools.some(tool => tool.name === newToolName)) {
-        newToolName = `new_function_${counter++}`;
-      }
-      return {
-        tools: [
-          ...state.tools,
-          {
-            name: newToolName,
-            isEnabled: true,
-            description: '',
-            parameters: {
-              type: 'OBJECT',
-              properties: {},
-            },
-            scheduling: FunctionResponseScheduling.INTERRUPT,
-          },
-        ],
-      };
-    }),
-  removeTool: (toolName: string) =>
-    set(state => ({
-      tools: state.tools.filter(tool => tool.name !== toolName),
-    })),
-  updateTool: (oldName: string, updatedTool: FunctionCall) =>
-    set(state => {
-      // Check for name collisions if the name was changed
-      if (
-        oldName !== updatedTool.name &&
-        state.tools.some(tool => tool.name === updatedTool.name)
-      ) {
-        console.warn(`Tool with name "${updatedTool.name}" already exists.`);
-        // Prevent the update by returning the current state
-        return state;
-      }
-      return {
-        tools: state.tools.map(tool =>
-          tool.name === oldName ? updatedTool : tool,
-        ),
-      };
-    }),
+  addTool: () => {
+    const newTool: FunctionCall = {
+      name: `new_function_${Date.now()}`,
+      description: 'A new function.',
+      parameters: { type: 'OBJECT', properties: {} },
+      isEnabled: true,
+      scheduling: FunctionResponseScheduling.INTERRUPT,
+    };
+    set(state => ({ tools: [...state.tools, newTool] }));
+    return newTool;
+  },
+  removeTool: (name) => set(state => ({ tools: state.tools.filter(t => t.name !== name) })),
+  updateTool: (name, updatedTool) => set(state => ({
+    tools: state.tools.map(t => t.name === name ? updatedTool : t)
+  })),
 }));
 
-/**
- * Logs
- */
-export interface LiveClientToolResponse {
-  functionResponses?: FunctionResponse[];
-}
-export interface GroundingChunk {
-  web?: {
-    // FIX: Type 'GroundingChunk[]' is not assignable. Match type from @google/genai where uri and title are optional.
-    uri?: string;
-    title?: string;
-  };
+// History Store
+interface HistoryState {
+  conversations: Record<string, Conversation>;
+  getSortedConversations: () => Conversation[];
+  loadConversation: (id: string) => Promise<void>;
+  deleteConversation: (id: string) => void;
+  updateConversationTitle: (id: string, title: string) => void;
+  saveConversation: (id: string, turns: ConversationTurn[]) => void;
+  addConversation: (id: string) => void;
+  togglePinConversation: (id: string) => void;
 }
 
-export interface ConversationTurn {
-  timestamp: Date;
-  role: 'user' | 'agent' | 'system';
-  text: string;
-  isFinal: boolean;
-  isRead?: boolean;
-  toolUseRequest?: LiveServerToolCall;
-  toolUseResponse?: LiveClientToolResponse;
-  groundingChunks?: GroundingChunk[];
-}
+export const useHistoryStore = create<HistoryState>()(
+  persist(
+    (set, get) => ({
+      conversations: {},
+      getSortedConversations: () => {
+        return Object.values(get().conversations).sort((a: Conversation, b: Conversation) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return b.lastModified - a.lastModified;
+        });
+      },
+      loadConversation: (id) => {
+        return new Promise<void>((resolve) => {
+          // Use a short timeout to allow the UI to update with a loading state
+          // before potentially blocking synchronous operations like saving to localStorage.
+          setTimeout(() => {
+            const { turns, currentConversationId } = useLogStore.getState();
+            if (id === currentConversationId) {
+              resolve();
+              return;
+            }
+            if (turns.length > 0) {
+              get().saveConversation(currentConversationId, turns);
+            }
+            const conversationToLoad = get().conversations[id];
+            if (conversationToLoad) {
+              useLogStore.setState({ turns: [...conversationToLoad.turns], currentConversationId: id });
+              useUI.getState().setView('chat');
+            }
+            resolve();
+          }, 50);
+        });
+      },
+      deleteConversation: (id) => {
+        set(state => {
+          const newConversations = { ...state.conversations };
+          delete newConversations[id];
+          return { conversations: newConversations };
+        });
+        if (useLogStore.getState().currentConversationId === id) {
+          useLogStore.getState().startNewConversation();
+        }
+      },
+      updateConversationTitle: (id, title) => {
+        set(state => {
+          const conversation = state.conversations[id];
+          if (conversation) {
+            return {
+              conversations: {
+                ...state.conversations,
+                [id]: { ...conversation, title, lastModified: Date.now() },
+              },
+            };
+          }
+          return state;
+        });
+      },
+      saveConversation: (id, turns) => {
+        if (turns.length === 0) {
+            if (useLogStore.getState().currentConversationId !== id) {
+                set(state => {
+                    const newConversations = { ...state.conversations };
+                    delete newConversations[id];
+                    return { conversations: newConversations };
+                });
+            }
+            return;
+        }
 
-export const useLogStore = create<{
+        const firstUserTurn = turns.find(t => t.role === 'user');
+        const existingConversation = get().conversations[id];
+        const title = existingConversation?.title && existingConversation.title !== 'Nova Conversa'
+            ? existingConversation.title
+            : firstUserTurn?.text.substring(0, 50).replace(/\n/g, ' ') || 'Nova Conversa';
+
+        set(state => ({
+          conversations: {
+            ...state.conversations,
+            [id]: {
+              id,
+              title,
+              turns: [...turns],
+              lastModified: Date.now(),
+              isPinned: existingConversation?.isPinned || false,
+             },
+          },
+        }));
+      },
+      addConversation: (id) => {
+          if (get().conversations[id]) return;
+          set(state => ({
+              conversations: {
+                  ...state.conversations,
+                  [id]: { id, title: 'Nova Conversa', turns: [], lastModified: Date.now(), isPinned: false }
+              }
+          }))
+      },
+      togglePinConversation: (id: string) => {
+        set(state => {
+          const conversation = state.conversations[id];
+          if (conversation) {
+            return {
+              conversations: {
+                ...state.conversations,
+                [id]: { ...conversation, isPinned: !conversation.isPinned, lastModified: Date.now() },
+              },
+            };
+          }
+          return state;
+        });
+      },
+    }),
+    {
+      name: 'gemini-live-history-storage',
+      storage: createJSONStorage(() => localStorage, {
+        reviver: (key, value: any) => {
+            if (key === 'conversations' && value) {
+              Object.values(value).forEach((conv: any) => {
+                if (conv.turns && Array.isArray(conv.turns)) {
+                    conv.turns = conv.turns.map((turn: any) => ({ ...turn, timestamp: new Date(turn.timestamp) }));
+                }
+              });
+            }
+            return value;
+        }
+      }),
+    },
+  ),
+);
+
+// Log Store (current conversation)
+interface LogState {
   turns: ConversationTurn[];
   currentConversationId: string;
   addTurn: (turn: Omit<ConversationTurn, 'timestamp'>) => void;
   updateLastTurn: (update: Partial<ConversationTurn>) => void;
   markLastUserTurnAsRead: () => void;
   clearTurns: () => void;
-  startNewConversation: () => void;
-  _loadConversation: (id: string, turns: ConversationTurn[]) => void;
-}>((set, get) => ({
+  startNewConversation: () => Promise<void>;
+  loadTurnsFromFile: (turns: ConversationTurn[]) => Promise<void>;
+}
+
+export const useLogStore = create<LogState>()((set, get) => ({
   turns: [],
-  currentConversationId: crypto.randomUUID(),
-  addTurn: (turn: Omit<ConversationTurn, 'timestamp'>) =>
-    set(state => ({
+  currentConversationId: `conv_${Date.now()}`,
+  addTurn: (turn) => {
+    set((state) => ({
       turns: [...state.turns, { ...turn, timestamp: new Date() }],
-    })),
-  updateLastTurn: (update: Partial<Omit<ConversationTurn, 'timestamp'>>) => {
-    set(state => {
-      if (state.turns.length === 0) {
-        return state;
-      }
+    }));
+    useHistoryStore.getState().saveConversation(get().currentConversationId, get().turns);
+  },
+  updateLastTurn: (update) => {
+    set((state) => {
       const newTurns = [...state.turns];
-      const lastTurn = { ...newTurns[newTurns.length - 1], ...update };
-      newTurns[newTurns.length - 1] = lastTurn;
+      if (newTurns.length > 0) {
+        newTurns[newTurns.length - 1] = { ...newTurns[newTurns.length - 1], ...update };
+      }
       return { turns: newTurns };
     });
+     if(update.isFinal){
+        useHistoryStore.getState().saveConversation(get().currentConversationId, get().turns);
+    }
   },
   markLastUserTurnAsRead: () => {
-    set(state => {
+    set((state) => {
       const newTurns = [...state.turns];
-      // Find the last user turn and mark it as read
+      // Fix: Property 'findLastIndex' does not exist on type 'any[]'.
+      // Manually find the last index of a user turn for broader compatibility.
+      let lastUserTurnIndex = -1;
       for (let i = newTurns.length - 1; i >= 0; i--) {
-        if (newTurns[i].role === 'user' && !newTurns[i].isRead) {
-          newTurns[i] = { ...newTurns[i], isRead: true };
+        if (newTurns[i].role === 'user') {
+          lastUserTurnIndex = i;
           break;
         }
       }
+      if (lastUserTurnIndex !== -1) {
+        newTurns[lastUserTurnIndex] = { ...newTurns[lastUserTurnIndex], isRead: true };
+      }
       return { turns: newTurns };
     });
   },
-  clearTurns: () => set({ turns: [], currentConversationId: crypto.randomUUID() }),
-  startNewConversation: () => {
-    set({ turns: [], currentConversationId: crypto.randomUUID() });
+  clearTurns: () => {
+      useHistoryStore.getState().deleteConversation(get().currentConversationId);
+      const newId = `conv_${Date.now()}`;
+      set({ turns: [], currentConversationId: newId });
+      useHistoryStore.getState().addConversation(newId);
   },
-  _loadConversation: (id: string, turns: ConversationTurn[]) => {
-    set({ turns, currentConversationId: id });
+  startNewConversation: () => {
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const { turns, currentConversationId } = get();
+        if (turns.length > 0) {
+          useHistoryStore.getState().saveConversation(currentConversationId, turns);
+        }
+        const newId = `conv_${Date.now()}`;
+        set({ turns: [], currentConversationId: newId });
+        useHistoryStore.getState().addConversation(newId);
+        useUI.getState().setView('chat');
+        resolve();
+      }, 50);
+    });
+  },
+  loadTurnsFromFile: async (turns) => {
+    await get().startNewConversation();
+    set({ turns });
+    useHistoryStore.getState().saveConversation(get().currentConversationId, get().turns);
+    useUI.getState().setView('chat');
   },
 }));
 
-/**
- * History
- */
-interface HistoryItem {
-  id: string;
-  title: string;
-  createdAt: string;
-  turns: ConversationTurn[];
-}
-
-export const useHistoryStore = create<{
-  conversations: Record<string, HistoryItem>;
-  saveCurrentConversation: () => void;
-  loadConversation: (id: string) => void;
-  deleteConversation: (id: string) => void;
-  getSortedConversations: () => Omit<HistoryItem, 'turns'>[];
-}>()(
-  persist(
-    (set, get) => ({
-      conversations: {},
-      saveCurrentConversation: () => {
-        const { currentConversationId, turns } = useLogStore.getState();
-        // Don't save empty conversations
-        if (turns.length === 0) return;
-
-        const conversations = get().conversations;
-        const existing = conversations[currentConversationId];
-
-        const firstUserTurn = turns.find(t => t.role === 'user');
-        const title =
-          existing?.title ||
-          (firstUserTurn?.text
-            ? firstUserTurn.text.substring(0, 40) +
-              (firstUserTurn.text.length > 40 ? '...' : '')
-            : 'Nova Conversa');
-
-        const newConversation = {
-          id: currentConversationId,
-          title,
-          createdAt: existing?.createdAt || new Date().toISOString(),
-          turns,
-        };
-
-        set({
-          conversations: {
-            ...conversations,
-            [currentConversationId]: newConversation,
-          },
-        });
-      },
-      loadConversation: id => {
-        const conversation = get().conversations[id];
-        if (conversation) {
-          useLogStore.getState()._loadConversation(id, conversation.turns);
-        }
-      },
-      deleteConversation: id => {
-        set(state => {
-          const newConversations = { ...state.conversations };
-          delete newConversations[id];
-          return { conversations: newConversations };
-        });
-
-        if (useLogStore.getState().currentConversationId === id) {
-          useLogStore.getState().startNewConversation();
-        }
-      },
-      getSortedConversations: () => {
-        return Object.values(get().conversations)
-          .map(({ id, title, createdAt }) => ({ id, title, createdAt }))
-          .sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          );
-      },
-    }),
-    {
-      name: 'conversation-history-storage',
-      storage: createJSONStorage(() => localStorage),
-    },
-  ),
-);
-
-// Auto-save the current conversation when turns are added/updated.
-useLogStore.subscribe((state, prevState) => {
-  // Simple check: if turns array is different and not empty, save.
-  if (state.turns !== prevState.turns && state.turns.length > 0) {
-    useHistoryStore.getState().saveCurrentConversation();
-  }
-});
+// Initialize first conversation
+useHistoryStore.getState().addConversation(useLogStore.getState().currentConversationId);

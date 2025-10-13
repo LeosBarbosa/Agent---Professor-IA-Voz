@@ -72,6 +72,7 @@ class AudioProcessingWorklet extends AudioWorkletProcessor {
     }
   }
 }
+registerProcessor('audio-recorder-worklet', AudioProcessingWorklet);
 `;
 
 export default AudioRecordingWorklet;

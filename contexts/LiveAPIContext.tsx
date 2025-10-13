@@ -35,16 +35,14 @@ export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({
   const liveAPI = useLiveApi({ apiKey });
 
   return (
-    <LiveAPIContext.Provider value={liveAPI}>
-      {children}
-    </LiveAPIContext.Provider>
+    <LiveAPIContext.Provider value={liveAPI}>{children}</LiveAPIContext.Provider>
   );
 };
 
-export const useLiveAPIContext = () => {
+export const useLiveAPIProvider = () => {
   const context = useContext(LiveAPIContext);
   if (!context) {
-    throw new Error('useLiveAPIContext must be used wihin a LiveAPIProvider');
+    throw new Error('useLiveAPIProvider must be used wihin a LiveAPIProvider');
   }
   return context;
 };

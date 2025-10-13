@@ -12,7 +12,7 @@ export default function Modal({ children, onClose }: ModalProps) {
   return (
     <div className="modalShroud">
       <div className="modal">
-        <button onClick={onClose} className="modalClose">
+        <button onClick={onClose} className="modalClose" aria-label="Fechar">
           <span className="icon">close</span>
         </button>
         <div className="modalContent">{children}</div>

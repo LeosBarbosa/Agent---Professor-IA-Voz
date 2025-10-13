@@ -21,10 +21,18 @@
 import ControlTray from './components/console/control-tray/ControlTray';
 import ErrorScreen from './components/demo/ErrorScreen';
 import StreamingConsole from './components/demo/streaming-console/StreamingConsole';
-
+import { GoogleDriveProvider } from './contexts/GoogleDriveContext';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import RightSidebar from './components/RightSidebar';
 import { LiveAPIProvider } from './contexts/LiveAPIContext';
+import { useUI } from './lib/state';
+import PresentationView from './components/demo/presentation-view/PresentationView';
+import cn from 'classnames';
+import HomeScreen from './components/home/HomeScreen';
+import PersonaManagementScreen from './components/persona-management/PersonaManagementScreen';
+import WelcomeModal from './components/welcome-modal/WelcomeModal';
+import PiPManager from './components/PiPManager';
 
 const API_KEY = process.env.API_KEY;
 if (!API_KEY) {
@@ -33,28 +41,43 @@ if (!API_KEY) {
   );
 }
 
-/**
- * Main application component that provides a streaming interface for Live API.
- * Manages video streaming state and provides controls for webcam/screen capture.
- */
+const GOOGLE_DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY;
+const GOOGLE_DRIVE_CLIENT_ID = process.env.GOOGLE_DRIVE_CLIENT_ID;
+
 function App() {
+  const { view, isPresentationMode, togglePresentationMode, isFocusMode, isPersonaManagementOpen, isWelcomeModalOpen, isSettingsOpen, isHistoryOpen } = useUI();
+
   return (
     <div className="App">
-      <LiveAPIProvider apiKey={API_KEY}>
-        <ErrorScreen />
-        <Header />
-        <Sidebar />
-        <div className="streaming-console">
-          <main>
-            <div className="main-app-area">
-              <StreamingConsole />
+      <GoogleDriveProvider
+        apiKey={GOOGLE_DRIVE_API_KEY}
+        clientId={GOOGLE_DRIVE_CLIENT_ID}
+      >
+        <LiveAPIProvider apiKey={API_KEY}>
+          {isWelcomeModalOpen && <WelcomeModal />}
+          {isPersonaManagementOpen && <PersonaManagementScreen />}
+          {isPresentationMode && <PresentationView onClose={togglePresentationMode} />}
+          <ErrorScreen />
+          <PiPManager />
 
+          {view === 'home' && <HomeScreen />}
+          
+          {view === 'chat' && (
+            <div className={cn('chat-layout', { 'focus-mode': isFocusMode, 'settings-closed': !isSettingsOpen, 'history-closed': !isHistoryOpen })}>
+              <Sidebar />
+              <main className="chat-main">
+                <Header />
+                <div className="streaming-console-container">
+                  <StreamingConsole />
+                </div>
+                <ControlTray />
+              </main>
+              <RightSidebar />
             </div>
+          )}
 
-            <ControlTray></ControlTray>
-          </main>
-        </div>
-      </LiveAPIProvider>
+        </LiveAPIProvider>
+      </GoogleDriveProvider>
     </div>
   );
 }
