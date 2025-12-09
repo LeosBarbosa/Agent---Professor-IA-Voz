@@ -23,7 +23,9 @@ export interface FunctionCall {
   description: string;
   parameters: Schema;
   isEnabled: boolean;
-  scheduling: FunctionResponseScheduling;
+  // FIX: Made `scheduling` optional as it's not applicable in all contexts (e.g. text API)
+  // and was causing a type error in lib/tool-utils.ts.
+  scheduling?: FunctionResponseScheduling;
 }
 
 export interface GroundingChunk {
@@ -65,11 +67,13 @@ export interface Persona {
   tagline: string;
   description: string;
   systemPrompt: string;
-  tools: FunctionCall[];
+  tools: any[];
   header: { title: string; subtitle: string };
   welcome: { title: string; description: string; prompts: WelcomePrompt[], tips?: string[] };
   speechRate: number;
   isDefault?: boolean;
+  textModel: string;
+  textModelConfig?: any;
 }
 
 interface UploadModalState {
@@ -118,7 +122,7 @@ interface UIState {
 export const useUI = create<UIState>()((set) => ({
   isSettingsOpen: false,
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
-  isHistoryOpen: true,
+  isHistoryOpen: window.innerWidth > 900,
   toggleHistory: () => set((state) => ({ isHistoryOpen: !state.isHistoryOpen })),
   view: 'home',
   setView: (view) => set({ view, isAgentThinking: false, confidence: 0 }),
@@ -132,7 +136,7 @@ export const useUI = create<UIState>()((set) => ({
   setConfidence: (updater) => set((state) => ({ confidence: updater(state.confidence) })),
   isPersonaManagementOpen: false,
   togglePersonaManagement: () => set((state) => ({ isPersonaManagementOpen: !state.isPersonaManagementOpen })),
-  isWelcomeModalOpen: !localStorage.getItem('gemini-live-sandbox-visited'),
+  isWelcomeModalOpen: false,
   setWelcomeModalOpen: (isOpen) => {
     set({ isWelcomeModalOpen: isOpen });
     if (!isOpen) {
@@ -205,31 +209,41 @@ export const useFileStore = create<FileStoreState>()((set) => ({
 interface SettingsState {
   systemPrompt: string;
   model: string;
+  textModel: string;
+  textModelConfig?: any;
   voice: string;
   voiceGender: 'male' | 'female';
   speechRate: number;
   debugMode: boolean;
+  readAloud: boolean;
   setSystemPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
+  setTextModel: (model: string, config?: any) => void;
   setVoice: (voice: string) => void;
   setVoiceGender: (gender: 'male' | 'female') => void;
   setSpeechRate: (rate: number) => void;
   toggleDebugMode: () => void;
+  setReadAloud: (readAloud: boolean) => void;
 }
 
 export const useSettings = create<SettingsState>()((set, get) => ({
   systemPrompt: '', // Will be initialized by usePersonaStore
   model: DEFAULT_LIVE_API_MODEL,
+  textModel: 'gemini-2.5-flash',
+  textModelConfig: {},
   voice: MALE_VOICES[0],
   voiceGender: 'male',
   speechRate: 1.0,
   debugMode: false,
+  readAloud: false,
   setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
   setModel: (model) => set({ model }),
+  setTextModel: (textModel, textModelConfig) => set({ textModel, textModelConfig }),
   setVoice: (voice) => set({ voice }),
   setVoiceGender: (voiceGender) => set({ voiceGender, voice: (voiceGender === 'male' ? MALE_VOICES : FEMALE_VOICES)[0] }),
   setSpeechRate: (speechRate) => set({ speechRate }),
   toggleDebugMode: () => set(state => ({ debugMode: !state.debugMode })),
+  setReadAloud: (readAloud) => set({ readAloud }),
 }));
 
 // Persona Store
@@ -251,8 +265,10 @@ export const usePersonaStore = create<PersonaState>()(
         const persona = get().personas.find(p => p.id === id);
         if (persona) {
           set({ activePersona: persona });
-          useSettings.getState().setSystemPrompt(persona.systemPrompt);
-          useSettings.getState().setSpeechRate(persona.speechRate);
+          const { setSystemPrompt, setSpeechRate, setTextModel } = useSettings.getState();
+          setSystemPrompt(persona.systemPrompt);
+          setSpeechRate(persona.speechRate);
+          setTextModel(persona.textModel, persona.textModelConfig);
           useTools.getState().setTools(persona.tools);
           useFileStore.getState().clearFiles();
         } else {
@@ -269,9 +285,18 @@ export const usePersonaStore = create<PersonaState>()(
         return newPersona;
       },
       updatePersona: (id, updatedData) => {
-        set(state => ({
-          personas: state.personas.map(p => p.id === id ? { ...p, ...updatedData } : p)
-        }));
+        set(state => {
+          const newPersonas = state.personas.map(p =>
+            p.id === id ? { ...p, ...updatedData } : p,
+          );
+          if (state.activePersona?.id === id) {
+            return {
+              personas: newPersonas,
+              activePersona: { ...state.activePersona, ...updatedData },
+            };
+          }
+          return { personas: newPersonas };
+        });
       },
       deletePersona: (id) => {
         set(state => ({
@@ -293,25 +318,44 @@ export const usePersonaStore = create<PersonaState>()(
   )
 );
 
-// Tools Store (now simplified to hold tools for the active persona)
+// Helper to persist tool changes to the active persona
+const updateActivePersonaTools = (newTools: any[]) => {
+  const { activePersona, updatePersona } = usePersonaStore.getState();
+  if (activePersona) {
+    updatePersona(activePersona.id, { tools: newTools });
+  }
+};
+
+// Tools Store
 interface ToolsState {
-  tools: FunctionCall[];
-  setTools: (tools: FunctionCall[]) => void;
+  tools: any[];
+  setTools: (tools: any[]) => void;
   toggleTool: (name: string) => void;
   addTool: () => FunctionCall;
   removeTool: (name: string) => void;
-  updateTool: (name: string, updatedTool: FunctionCall) => void;
+  updateTool: (originalName: string, updatedTool: FunctionCall) => void;
 }
 
-export const useTools = create<ToolsState>()((set, get) => ({
+export const useTools = create<ToolsState>()((set) => ({
   tools: [],
   setTools: (tools) => set({ tools }),
-  toggleTool: (name) =>
-    set((state) => ({
-      tools: state.tools.map((tool) =>
-        tool.name === name ? { ...tool, isEnabled: !tool.isEnabled } : tool,
-      ),
-    })),
+  toggleTool: (name) => {
+    set((state) => {
+      const currentTools = state.tools;
+      if (!currentTools[0]?.functionDeclarations) return state;
+
+      const newDeclarations = currentTools[0].functionDeclarations.map(
+        (tool: FunctionCall) =>
+          tool.name === name ? { ...tool, isEnabled: !tool.isEnabled } : tool,
+      );
+
+      const newTools = [
+        { ...currentTools[0], functionDeclarations: newDeclarations },
+      ];
+      updateActivePersonaTools(newTools);
+      return { tools: newTools };
+    });
+  },
   addTool: () => {
     const newTool: FunctionCall = {
       name: `new_function_${Date.now()}`,
@@ -320,14 +364,50 @@ export const useTools = create<ToolsState>()((set, get) => ({
       isEnabled: true,
       scheduling: FunctionResponseScheduling.INTERRUPT,
     };
-    set(state => ({ tools: [...state.tools, newTool] }));
+    set(state => {
+      const currentTools = state.tools;
+      const declarations = currentTools?.[0]?.functionDeclarations || [];
+      const newDeclarations = [...declarations, newTool];
+      const newTools = [{ functionDeclarations: newDeclarations }];
+
+      updateActivePersonaTools(newTools);
+      return { tools: newTools };
+    });
     return newTool;
   },
-  removeTool: (name) => set(state => ({ tools: state.tools.filter(t => t.name !== name) })),
-  updateTool: (name, updatedTool) => set(state => ({
-    tools: state.tools.map(t => t.name === name ? updatedTool : t)
-  })),
+  removeTool: (name) =>
+    set(state => {
+      const currentTools = state.tools;
+      if (!currentTools[0]?.functionDeclarations) return state;
+
+      const newDeclarations = currentTools[0].functionDeclarations.filter(
+        (t: FunctionCall) => t.name !== name,
+      );
+      const newTools =
+        newDeclarations.length > 0
+          ? [{ ...currentTools[0], functionDeclarations: newDeclarations }]
+          : [];
+
+      updateActivePersonaTools(newTools);
+      return { tools: newTools };
+    }),
+  updateTool: (originalName, updatedTool) =>
+    set(state => {
+      const currentTools = state.tools;
+      if (!currentTools[0]?.functionDeclarations) return state;
+
+      const newDeclarations = currentTools[0].functionDeclarations.map(
+        (t: FunctionCall) => (t.name === originalName ? updatedTool : t),
+      );
+      const newTools = [
+        { ...currentTools[0], functionDeclarations: newDeclarations },
+      ];
+
+      updateActivePersonaTools(newTools);
+      return { tools: newTools };
+    }),
 }));
+
 
 // History Store
 interface HistoryState {
@@ -354,8 +434,6 @@ export const useHistoryStore = create<HistoryState>()(
       },
       loadConversation: (id) => {
         return new Promise<void>((resolve) => {
-          // Use a short timeout to allow the UI to update with a loading state
-          // before potentially blocking synchronous operations like saving to localStorage.
           setTimeout(() => {
             const { turns, currentConversationId } = useLogStore.getState();
             if (id === currentConversationId) {
@@ -507,8 +585,6 @@ export const useLogStore = create<LogState>()((set, get) => ({
   markLastUserTurnAsRead: () => {
     set((state) => {
       const newTurns = [...state.turns];
-      // Fix: Property 'findLastIndex' does not exist on type 'any[]'.
-      // Manually find the last index of a user turn for broader compatibility.
       let lastUserTurnIndex = -1;
       for (let i = newTurns.length - 1; i >= 0; i--) {
         if (newTurns[i].role === 'user') {

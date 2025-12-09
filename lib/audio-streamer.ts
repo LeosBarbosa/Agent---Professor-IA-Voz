@@ -33,7 +33,7 @@ export class AudioStreamer {
   private isStreamComplete: boolean = false;
   private checkInterval: number | null = null;
   private scheduledTime: number = 0;
-  private initialBufferTime: number = 0.1; //0.1 // 100ms initial buffer
+  private initialBufferTime: number = 0.05; // 50ms initial buffer
   // Web Audio API nodes. source => gain => analyser => destination
   public gainNode: GainNode;
   public analyserNode: AnalyserNode;
@@ -148,7 +148,7 @@ export class AudioStreamer {
   }
 
   private scheduleNextBuffer() {
-    const SCHEDULE_AHEAD_TIME = 0.2;
+    const SCHEDULE_AHEAD_TIME = 0.1;
 
     while (
       this.audioQueue.length > 0 &&

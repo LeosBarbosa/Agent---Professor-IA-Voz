@@ -20,13 +20,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GenAILiveClient } from '../../lib/genai-live-client';
-import { LiveConnectConfig, LiveServerToolCall, Modality, Part } from '@google/genai';
+import { LiveConnectConfig, LiveServerToolCall, Modality, Part, Content } from '@google/genai';
 import { AudioStreamer } from '../../lib/audio-streamer';
 import { audioContext } from '../../lib/utils';
 import VolMeterWorket from '../../lib/worklets/vol-meter';
-import { useLogStore, useSettings, useHistoryStore, useTools, usePersonaStore } from '../../lib/state';
+import { useLogStore, useSettings, useHistoryStore, useTools } from '../../lib/state';
 import { AudioRecorder } from '../../lib/audio-recorder';
 import { useGoogleDriveContext } from '../../contexts/GoogleDriveContext';
+import { sanitizeToolsForApi } from '../../lib/tool-utils';
 
 export type RecordingStatus = 'idle' | 'recording' | 'processing';
 const FOLDER_NAME = 'Base de Conhecimento - Projetos';
@@ -37,15 +38,19 @@ export type UseLiveApiResults = {
   disconnect: () => void;
   connected: boolean;
   volume: number;
-  // New exports
   toggleMute: () => void;
   muted: boolean;
+  toggleVideo: () => void;
+  videoStream: MediaStream | null;
   toggleRecording: () => void;
   recordingStatus: RecordingStatus;
   recordingTime: number;
+  speakingTime: number;
   inputAnalyser?: AnalyserNode;
   outputAnalyser?: AnalyserNode;
   agentAudioStream?: MediaStream;
+  error: string | null;
+  clearError: () => void;
 };
 
 export function useLiveApi({
@@ -57,12 +62,12 @@ export function useLiveApi({
   const client = useMemo(() => new GenAILiveClient(apiKey, model), [apiKey, model]);
   const { findFolderByName, searchFiles, downloadFileContent } = useGoogleDriveContext();
 
-
-  // All audio-related state is now in this hook
   const [muted, setMuted] = useState(true);
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const [recordingStatus, setRecordingStatus] =
     useState<RecordingStatus>('idle');
   const [recordingTime, setRecordingTime] = useState(0);
+  const [speakingTime, setSpeakingTime] = useState(0);
   const [connected, setConnected] = useState(false);
   const [volume, setVolume] = useState(0);
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | undefined>();
@@ -72,6 +77,7 @@ export function useLiveApi({
   const [agentAudioStream, setAgentAudioStream] = useState<
     MediaStream | undefined
   >();
+  const [error, setError] = useState<string | null>(null);
 
   const audioRecorderRef = useRef<AudioRecorder>(new AudioRecorder());
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
@@ -90,7 +96,11 @@ export function useLiveApi({
     timeoutId: number;
   } | null>(null);
 
-  // setup audioStreamer for AI output
+  // Video Streaming Refs
+  const videoIntervalRef = useRef<number | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+
   useEffect(() => {
     if (!audioStreamerRef.current) {
       audioContext({ id: 'audio-out' }).then((audioCtx: AudioContext) => {
@@ -108,7 +118,6 @@ export function useLiveApi({
     }
   }, []);
 
-  // Mic data to GenAI
   useEffect(() => {
     const recorder = audioRecorderRef.current;
     const onData = (base64: string) => {
@@ -123,18 +132,82 @@ export function useLiveApi({
       recorder.off('data', onData);
     };
   }, [connected, muted, client]);
+  
+  // Video streaming logic
+  useEffect(() => {
+    if (videoStream && connected) {
+      const video = videoElementRef.current || document.createElement('video');
+      videoElementRef.current = video;
+      video.srcObject = videoStream;
+      video.muted = true;
+      video.play().catch(e => console.error("Error playing hidden video for frame capture:", e));
 
-  // GenAI connection events
+      const canvas = canvasElementRef.current || document.createElement('canvas');
+      canvasElementRef.current = canvas;
+      const ctx = canvas.getContext('2d');
+
+      const sendFrame = () => {
+        if (!ctx || !video.videoWidth || !video.videoHeight) return;
+        
+        canvas.width = video.videoWidth * 0.5; // Scale down for performance/bandwidth
+        canvas.height = video.videoHeight * 0.5;
+        
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        client.sendRealtimeInput([{ mimeType: 'image/jpeg', data: base64Data }]);
+      };
+
+      // Send a frame every 500ms (2 FPS)
+      videoIntervalRef.current = window.setInterval(sendFrame, 500);
+    } else {
+      if (videoIntervalRef.current) {
+        clearInterval(videoIntervalRef.current);
+        videoIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (videoIntervalRef.current) {
+        clearInterval(videoIntervalRef.current);
+        videoIntervalRef.current = null;
+      }
+    };
+  }, [videoStream, connected, client]);
+
+  useEffect(() => {
+    let timerId: number | null = null;
+    if (connected && !muted) {
+      timerId = window.setInterval(() => {
+        setSpeakingTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setSpeakingTime(0);
+    }
+  
+    return () => {
+      if (timerId) {
+        clearInterval(timerId);
+      }
+    };
+  }, [connected, muted]);
+
   useEffect(() => {
     const onOpen = () => setConnected(true);
     const onClose = () => {
       setConnected(false);
-      // Stop recording if active
+      setVideoStream(null); // Desliga o vídeo ao desconectar
       if (mediaRecorderRef.current?.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
-      // Stop mic
       audioRecorderRef.current.stop();
+    };
+    const onError = (e: ErrorEvent) => {
+        let message = 'Ocorreu um erro desconhecido na API Live.';
+        if (e.message) {
+            message = e.message;
+        }
+        setError(message);
     };
     const onAudio = (data: ArrayBuffer) => {
       if (audioStreamerRef.current) {
@@ -154,7 +227,6 @@ export function useLiveApi({
         let result: any;
         let sourceFile: { name: string; id: string } | undefined = undefined;
 
-        // Display a system message that the function call is being triggered
         addTurn({
           role: 'system',
           text: `Ativando ferramenta: **${
@@ -243,11 +315,6 @@ export function useLiveApi({
             result = { error: 'An error occurred while defining the word.' };
           }
         } else if (fc.name === 'read_web_page' && fc.args.url) {
-            // NOTE: A direct fetch to a URL from the browser will likely be blocked
-            // by CORS policies. A real-world application would use a server-side
-            // proxy to fetch the content. For this demo, we will simulate the
-            // action and return a success message, allowing the model to use its
-            // existing knowledge to discuss the topic.
             result = {
               status: 'success',
               message: `O conteúdo da página foi lido e estou pronto para discuti-lo.`,
@@ -267,10 +334,9 @@ export function useLiveApi({
                 const contentText = await contentBlob.text();
                 result = {
                   fileName: topResult.name,
-                  content: contentText.substring(0, 8000), // Truncate content to avoid exceeding limits
+                  content: contentText.substring(0, 8000),
                   message: 'Conteúdo do arquivo recuperado com sucesso.',
                 };
-                // Set the source file to be used in the agent's turn
                 sourceFile = { name: topResult.name, id: topResult.id };
                 addTurn({
                    role: 'system',
@@ -287,15 +353,11 @@ export function useLiveApi({
         }
         functionResponses.push({ id: fc.id, name: fc.name, response: { result } });
 
-        // If a source file was identified, attach it to the next agent turn.
-        // We do this by updating the last turn if it's an agent turn,
-        // or preparing it for the next agent turn to be created.
         if (sourceFile) {
             const lastTurn = useLogStore.getState().turns.at(-1);
             if (lastTurn?.role === 'agent') {
               updateLastTurn({ sourceFile });
             } else {
-              // Add a temporary agent turn that will be updated with transcription
               addTurn({ role: 'agent', text: '', isFinal: false, sourceFile });
             }
         }
@@ -306,6 +368,7 @@ export function useLiveApi({
 
     client.on('open', onOpen);
     client.on('close', onClose);
+    client.on('error', onError);
     client.on('interrupted', stopAudioStreamer);
     client.on('audio', onAudio);
     client.on('toolcall', onToolCall);
@@ -313,6 +376,7 @@ export function useLiveApi({
     return () => {
       client.off('open', onOpen);
       client.off('close', onClose);
+      client.off('error', onError);
       client.off('interrupted', stopAudioStreamer);
       client.off('audio', onAudio);
       client.off('toolcall', onToolCall);
@@ -320,101 +384,105 @@ export function useLiveApi({
   }, [client, findFolderByName, searchFiles, downloadFileContent]);
 
   const connect = useCallback(async () => {
-    const { systemPrompt, voice, speechRate } = useSettings.getState();
-    const { turns } = useLogStore.getState();
-    const { tools } = useTools.getState();
+    setError(null); // Limpa erros anteriores a cada nova tentativa de conexão.
+    try {
+        const { systemPrompt, voice } = useSettings.getState();
+        const { turns } = useLogStore.getState();
+        const { tools: rawTools } = useTools.getState();
 
-    const enabledTools = tools
-      .filter(tool => tool.isEnabled)
-      .map(tool => ({
-        functionDeclarations: [
-          {
-            name: tool.name,
-            description: tool.description || `Função: ${tool.name}`,
-            parameters: tool.parameters as any,
-          },
-        ],
-      }));
+        const tools = sanitizeToolsForApi(rawTools, 'live');
 
-    const history = turns
-      .filter(turn => turn.role === 'user' || turn.role === 'agent')
-      .map(turn => {
-        const parts: Part[] = [];
-        if (turn.text) {
-          parts.push({ text: turn.text });
-        }
-        if (turn.image) {
-          const [meta, base64Data] = turn.image.split(',');
-          const mimeType = meta.split(':')[1].split(';')[0];
-          parts.push({
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data,
+        const history: Content[] = turns
+          .filter(turn => turn.role === 'user' || turn.role === 'agent')
+          .map(turn => {
+            const parts: Part[] = [];
+            if (turn.text) {
+              parts.push({ text: turn.text });
+            }
+            if (turn.image) {
+              const [meta, base64Data] = turn.image.split(',');
+              const mimeType = meta.split(':')[1].split(';')[0];
+              parts.push({
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data,
+                },
+              });
+            }
+            return {
+              role: (turn.role === 'agent' ? 'model' : 'user') as 'user' | 'model',
+              parts: parts,
+            };
+          }).filter(content => content.parts.length > 0);
+
+        const dynamicConfig: LiveConnectConfig = {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: voice,
+              },
             },
-          });
-        }
-        return {
-          role: (turn.role === 'agent' ? 'model' : 'user') as 'user' | 'model',
-          parts: parts,
-        };
-      });
-
-    const dynamicConfig: LiveConnectConfig & { history?: any[] } = {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        speakingRate: speechRate,
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: voice,
           },
-        },
-      },
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-      history: history,
-      tools: enabledTools,
-    };
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        };
 
-    if (systemPrompt && systemPrompt.trim()) {
-      dynamicConfig.systemInstruction = systemPrompt;
-    }
+        // Conditionally add tools to config only if valid tools exist
+        if (tools && tools.length > 0) {
+            dynamicConfig.tools = tools;
+        }
+
+        if (systemPrompt && systemPrompt.trim()) {
+          dynamicConfig.systemInstruction = systemPrompt;
+        }
     
     if (useSettings.getState().debugMode) {
       console.log('[DEBUG] client.connect with config:', dynamicConfig);
     }
 
-    return new Promise<void>(async (resolve, reject) => {
-      try {
-        const onOpen = () => {
-          client.off('open', onOpen);
-          client.off('error', onError);
-          resolve();
-        };
-
-        const onError = (err: ErrorEvent) => {
-          client.off('open', onOpen);
-          client.off('error', onError);
-          reject(err);
-        };
-
-        client.on('open', onOpen);
-        client.on('error', onError);
-
-        await audioRecorderRef.current.start();
-        setInputAnalyser(audioRecorderRef.current.analyser);
-        await client.connect(dynamicConfig);
-      } catch (err) {
-        reject(err as any);
-      }
-    });
+    await audioRecorderRef.current.start();
+    setInputAnalyser(audioRecorderRef.current.analyser);
+    await client.connect(dynamicConfig, history);
+    } catch (err: any) {
+        let message = 'Falha ao iniciar a sessão de áudio.';
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            message = 'Permissão do microfone negada. Por favor, habilite o acesso nas configurações do seu navegador.';
+        } else if (err instanceof DOMException && err.name === 'NotFoundError') {
+            message = 'Nenhum microfone encontrado. Por favor, conecte um microfone e tente novamente.';
+        } else if (err.message && err.message.includes('invalid argument')) {
+            message = 'A conexão falhou devido a uma configuração inválida na persona. Verifique se as ferramentas selecionadas são compatíveis com a API Live.';
+        } else if (err.message) {
+            message = err.message;
+        }
+        setError(message);
+        audioRecorderRef.current.stop(); // Garante que o microfone seja liberado em caso de falha.
+    }
   }, [client]);
 
   const disconnect = useCallback(() => {
     client.disconnect();
     setInputAnalyser(undefined);
+    setVideoStream(null);
   }, [client]);
 
   const toggleMute = useCallback(() => setMuted(prev => !prev), []);
+
+  const toggleVideo = useCallback(async () => {
+    if (videoStream) {
+        // Stop all tracks
+        videoStream.getTracks().forEach(track => track.stop());
+        setVideoStream(null);
+    } else {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setVideoStream(stream);
+        } catch (e) {
+            console.error("Error accessing camera:", e);
+            setError("Falha ao acessar a câmera. Verifique as permissões.");
+        }
+    }
+  }, [videoStream]);
 
   const handleRecordingStop = useCallback(() => {
     const streamer = audioStreamerRef.current;
@@ -422,7 +490,6 @@ export function useLiveApi({
 
     const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
 
-    // Disconnect streams from mixer
     if (micSourceInOutputCtxRef.current) {
       micSourceInOutputCtxRef.current.disconnect();
       micSourceInOutputCtxRef.current = null;
@@ -432,7 +499,6 @@ export function useLiveApi({
       mixerDestinationRef.current = null;
     }
 
-    // Generate filename
     const { turns, currentConversationId } = useLogStore.getState();
     const { conversations } = useHistoryStore.getState();
     const currentConversation = conversations[currentConversationId];
@@ -454,7 +520,6 @@ export function useLiveApi({
       new Date().toISOString().split('T')[0]
     }.webm`;
 
-    // Trigger download
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     document.body.appendChild(a);
@@ -465,7 +530,6 @@ export function useLiveApi({
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
 
-    // Cleanup timer
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -483,11 +547,9 @@ export function useLiveApi({
     const mixerDestination = outputCtx.createMediaStreamDestination();
     mixerDestinationRef.current = mixerDestination;
 
-    // Create a source for the mic stream in the output context to allow mixing
     micSourceInOutputCtxRef.current =
       outputCtx.createMediaStreamSource(micStream);
 
-    // Connect both AI output and mic to the mixer destination
     streamer.gainNode.connect(mixerDestination);
     micSourceInOutputCtxRef.current.connect(mixerDestination);
 
@@ -524,7 +586,9 @@ export function useLiveApi({
     }
   }, [recordingStatus, startRecording, stopRecording]);
 
-  return {
+  const clearError = useCallback(() => setError(null), []);
+
+  return useMemo(() => ({
     client,
     connect,
     connected,
@@ -532,11 +596,21 @@ export function useLiveApi({
     volume,
     toggleMute,
     muted,
+    toggleVideo,
+    videoStream,
     toggleRecording,
     recordingStatus,
     recordingTime,
+    speakingTime,
     inputAnalyser,
     outputAnalyser,
     agentAudioStream,
-  };
+    error,
+    clearError,
+  }), [
+    client, connect, connected, disconnect, volume, toggleMute, muted,
+    toggleVideo, videoStream, toggleRecording, recordingStatus,
+    recordingTime, speakingTime, inputAnalyser, outputAnalyser,
+    agentAudioStream, error, clearError
+  ]);
 }

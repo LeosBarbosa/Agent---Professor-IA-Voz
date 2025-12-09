@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePersonaStore, useUI } from '../../../lib/state';
 import PersonaCard from './PersonaCard';
 import FilePrimingArea from './FilePrimingArea';
@@ -10,6 +10,11 @@ import FilePrimingArea from './FilePrimingArea';
 const HomeScreen: React.FC = () => {
   const { personas } = usePersonaStore();
   const { togglePersonaManagement } = useUI();
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   return (
     <div className="home-screen">
@@ -29,7 +34,7 @@ const HomeScreen: React.FC = () => {
       </header>
       <FilePrimingArea />
       <div className="persona-grid">
-        {personas.map(persona => (
+        {hasMounted && personas.map(persona => (
           <PersonaCard key={persona.id} persona={persona} />
         ))}
       </div>

@@ -102,7 +102,8 @@ export class GenAILiveClient {
   // The `connect` method separates history from the main config object,
   // as the Gemini API expects it as a top-level property in the connection options.
   public async connect(
-    configWithHistory: LiveConnectConfig & { history?: Content[] },
+    config: LiveConnectConfig,
+    history?: Content[],
   ): Promise<boolean> {
     if (this._status === 'connected' || this._status === 'connecting') {
       return false;
@@ -116,13 +117,11 @@ export class GenAILiveClient {
       onclose: this.onClose.bind(this),
     };
 
-    const { history, ...config } = configWithHistory;
-
     try {
       this.session = await this.client.live.connect({
         model: this.model,
-        config,
-        history,
+        config: config,
+        history: history,
         callbacks,
       });
     } catch (e: any) {

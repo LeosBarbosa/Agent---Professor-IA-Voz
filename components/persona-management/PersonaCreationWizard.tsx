@@ -91,6 +91,8 @@ const PersonaCreationWizard: React.FC<PersonaCreationWizardProps> = ({ onClose }
       systemPrompt: personaData.systemPrompt || 'Você é um assistente prestativo.',
       tools: [],
       speechRate: personaData.speechRate,
+      textModel: 'gemini-2.5-flash',
+      textModelConfig: {},
       header: {
         title: personaData.name || 'Nova Persona',
         subtitle: `Converse com ${personaData.name || 'sua nova IA'}`
@@ -134,7 +136,15 @@ const PersonaCreationWizard: React.FC<PersonaCreationWizardProps> = ({ onClose }
               <label>Nome da Persona</label>
               <input name="name" value={personaData.name} onChange={handleChange} placeholder="Ex: Professor de Inglês" />
               <label>Ícone (Material Symbols)</label>
-              <input name="icon" value={personaData.icon} onChange={handleChange} placeholder="Ex: school" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="icon" style={{ fontSize: '32px', color: 'var(--accent-blue-active)' }}>
+                  {personaData.icon || 'help'}
+                </span>
+                <input name="icon" value={personaData.icon} onChange={handleChange} placeholder="Ex: school" style={{ flexGrow: 1 }} />
+                <a href="https://fonts.google.com/icons" target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--accent-blue)', whiteSpace: 'nowrap' }}>
+                  Lista de Ícones
+                </a>
+              </div>
               <label>Slogan (breve descrição para o cartão)</label>
               <input name="tagline" value={personaData.tagline} onChange={handleChange} placeholder="Ex: Seu tutor particular de inglês" />
               <label>Velocidade da Fala: {personaData.speechRate.toFixed(2)}x</label>

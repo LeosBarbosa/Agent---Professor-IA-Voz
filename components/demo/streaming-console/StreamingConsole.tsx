@@ -7,7 +7,7 @@ import WelcomeScreen from '../welcome-screen/WelcomeScreen';
 import { LiveServerContent } from '@google/genai';
 
 import { useLiveAPIProvider } from '../../../contexts/LiveAPIContext';
-import { useLogStore, useUI } from '../../../lib/state';
+import { useLogStore, useUI, usePersonaStore } from '../../../lib/state';
 import AgentAvatar from './AgentAvatar';
 import WaveformVisualizer from '../waveform-visualizer/WaveformVisualizer';
 import TurnEntry from './TurnEntry';
@@ -36,6 +36,7 @@ function StreamingConsole() {
     currentSearchResultIndex,
     setCurrentSearchResultIndex,
   } = useUI();
+  const { activePersona } = usePersonaStore();
 
   useEffect(() => {
     const { addTurn, updateLastTurn, markLastUserTurnAsRead } =
@@ -212,7 +213,11 @@ function StreamingConsole() {
         />
       )}
       {turns.length > 0 && view === 'chat' && (
-        <AgentAvatar volume={volume} isAgentThinking={isAgentThinking} />
+        <AgentAvatar 
+          volume={volume} 
+          isAgentThinking={isAgentThinking} 
+          icon={activePersona?.icon}
+        />
       )}
       {turns.length === 0 ? (
         <WelcomeScreen />

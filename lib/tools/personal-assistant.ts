@@ -9,25 +9,25 @@ import { FunctionResponseScheduling } from '@google/genai';
 export const personalAssistantTools: FunctionCall[] = [
   {
     name: 'create_calendar_event',
-    description: 'Creates a new event in the user\'s calendar.',
+    description: 'Cria um novo evento no calendário do usuário.',
     parameters: {
       type: 'OBJECT',
       properties: {
         summary: {
           type: 'STRING',
-          description: 'The title or summary of the event.',
+          description: 'O título ou resumo do evento.',
         },
         location: {
           type: 'STRING',
-          description: 'The location of the event.',
+          description: 'O local do evento.',
         },
         startTime: {
           type: 'STRING',
-          description: 'The start time of the event in ISO 8601 format.',
+          description: 'A hora de início do evento no formato ISO 8601.',
         },
         endTime: {
           type: 'STRING',
-          description: 'The end time of the event in ISO 8601 format.',
+          description: 'A hora de término do evento no formato ISO 8601.',
         },
       },
       required: ['summary', 'startTime', 'endTime'],
@@ -37,21 +37,21 @@ export const personalAssistantTools: FunctionCall[] = [
   },
   {
     name: 'send_email',
-    description: 'Sends an email to a specified recipient.',
+    description: 'Envia um e-mail para um destinatário especificado.',
     parameters: {
       type: 'OBJECT',
       properties: {
         recipient: {
           type: 'STRING',
-          description: 'The email address of the recipient.',
+          description: 'O endereço de e-mail do destinatário.',
         },
         subject: {
           type: 'STRING',
-          description: 'The subject line of the email.',
+          description: 'A linha de assunto do e-mail.',
         },
         body: {
           type: 'STRING',
-          description: 'The body content of the email.',
+          description: 'O conteúdo do corpo do e-mail.',
         },
       },
       required: ['recipient', 'subject', 'body'],
@@ -61,17 +61,17 @@ export const personalAssistantTools: FunctionCall[] = [
   },
   {
     name: 'set_reminder',
-    description: 'Sets a reminder for the user.',
+    description: 'Define um lembrete para o usuário.',
     parameters: {
       type: 'OBJECT',
       properties: {
         task: {
           type: 'STRING',
-          description: 'The task for the reminder.',
+          description: 'A tarefa para o lembrete.',
         },
         time: {
           type: 'STRING',
-          description: 'The time for the reminder in ISO 8601 format.',
+          description: 'A hora do lembrete no formato ISO 8601.',
         },
       },
       required: ['task', 'time'],

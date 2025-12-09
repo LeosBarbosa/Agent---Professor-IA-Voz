@@ -15,7 +15,7 @@ const ConfidenceMeter = memo(() => {
   const confidence = useUI(state => state.confidence);
   const activePersona = usePersonaStore(state => state.activePersona);
 
-  if (activePersona?.id !== 'english-teacher') {
+  if (activePersona?.id !== 'professor-de-ingles') {
     return null;
   }
 
@@ -366,6 +366,9 @@ function Header() {
         >
           <span className="icon">apps</span>
         </button>
+        <span className="icon" style={{ fontSize: '24px', color: 'var(--accent-blue-active)', margin: '0 4px' }}>
+          {activePersona.icon}
+        </span>
         <div className="title-container">
           <h1>{header.title}</h1>
           <p>{header.subtitle}</p>

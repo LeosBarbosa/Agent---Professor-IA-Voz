@@ -8,9 +8,10 @@ import cn from 'classnames';
 type AgentAvatarProps = {
   volume: number;
   isAgentThinking: boolean;
+  icon?: string;
 };
 
-const AgentAvatar: React.FC<AgentAvatarProps> = ({ volume, isAgentThinking }) => {
+const AgentAvatar: React.FC<AgentAvatarProps> = ({ volume, isAgentThinking, icon }) => {
   const displacementRef = useRef<SVGFEDisplacementMapElement>(null);
   const turbulenceRef = useRef<SVGFETurbulenceElement>(null);
 
@@ -95,6 +96,23 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({ volume, isAgentThinking }) =>
           filter="url(#organic-filter)"
           id="organic-shape"
         />
+        {icon && (
+          <text
+            x="50%"
+            y="50%"
+            dominantBaseline="central"
+            textAnchor="middle"
+            className="material-symbols-outlined"
+            style={{
+              fontSize: '90px',
+              fill: 'var(--Neutral-90)',
+              pointerEvents: 'none',
+              opacity: 0.9,
+            }}
+          >
+            {icon}
+          </text>
+        )}
       </svg>
     </div>
   );

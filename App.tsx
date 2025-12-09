@@ -18,6 +18,7 @@
  * limitations under the License.
  */
 
+import { useEffect } from 'react';
 import ControlTray from './components/console/control-tray/ControlTray';
 import ErrorScreen from './components/demo/ErrorScreen';
 import StreamingConsole from './components/demo/streaming-console/StreamingConsole';
@@ -45,7 +46,13 @@ const GOOGLE_DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY;
 const GOOGLE_DRIVE_CLIENT_ID = process.env.GOOGLE_DRIVE_CLIENT_ID;
 
 function App() {
-  const { view, isPresentationMode, togglePresentationMode, isFocusMode, isPersonaManagementOpen, isWelcomeModalOpen, isSettingsOpen, isHistoryOpen } = useUI();
+  const { view, isPresentationMode, togglePresentationMode, isFocusMode, isPersonaManagementOpen, isWelcomeModalOpen, setWelcomeModalOpen, isSettingsOpen, isHistoryOpen } = useUI();
+
+  useEffect(() => {
+    if (!localStorage.getItem('gemini-live-sandbox-visited')) {
+      setWelcomeModalOpen(true);
+    }
+  }, [setWelcomeModalOpen]);
 
   return (
     <div className="App">

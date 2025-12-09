@@ -2,6 +2,7 @@
   "name": "IA Persona",
   "description": "Um sandbox interativo para conversar com diferentes especialistas de IA usando a API Gemini.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

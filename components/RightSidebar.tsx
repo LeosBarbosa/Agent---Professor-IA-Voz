@@ -7,7 +7,7 @@ import c from 'classnames';
 import { MALE_VOICES, FEMALE_VOICES } from '../lib/constants';
 import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
 import { useGoogleDriveContext } from '../contexts/GoogleDriveContext';
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useMemo } from 'react';
 import ToolEditorModal from './ToolEditorModal';
 
 const FOLDER_NAME = 'Base de Conhecimento - Projetos';
@@ -169,8 +169,10 @@ function RightSidebar() {
     setSpeechRate,
     debugMode,
     toggleDebugMode,
+    readAloud,
+    setReadAloud,
   } = useSettings();
-  const { tools, toggleTool, addTool, removeTool, updateTool } = useTools();
+  const { tools: rawTools, setTools, toggleTool, addTool, removeTool, updateTool } = useTools();
   const { personas, activePersona, setActivePersonaById } = usePersonaStore();
   const { connected, disconnect } = useLiveAPIProvider();
   const {
@@ -184,8 +186,28 @@ function RightSidebar() {
   const [editingTool, setEditingTool] = useState<FunctionCall | null>(null);
   const [isChangingPersona, setIsChangingPersona] = useState(false);
 
+  const functionDeclarations = useMemo(() => {
+    if (rawTools && Array.isArray(rawTools) && rawTools[0]?.functionDeclarations) {
+      return rawTools[0].functionDeclarations as FunctionCall[];
+    }
+    return [];
+  }, [rawTools]);
+
+  const hasGoogleSearch = useMemo(() => {
+    return !!(rawTools && Array.isArray(rawTools) && rawTools[0]?.googleSearch);
+  }, [rawTools]);
+
+
+  useEffect(() => {
+    if (activePersona) {
+      setTools(activePersona.tools);
+    }
+  }, [activePersona, setTools]);
+
   const handleSaveTool = (updatedTool: FunctionCall) => {
-    updateTool(updatedTool.name, updatedTool);
+    if (editingTool) {
+      updateTool(editingTool.name, updatedTool);
+    }
     setEditingTool(null);
   };
   
@@ -201,10 +223,8 @@ function RightSidebar() {
         disconnect();
       }
       setActivePersonaById(newPersonaId);
-      // await startNewConversation(); // This is handled by setActivePersonaById -> setView
       setIsChangingPersona(false);
     } else {
-      // Revert select to the current active persona if the user cancels
       e.target.value = activePersona?.id || '';
     }
   };
@@ -310,7 +330,22 @@ function RightSidebar() {
             <h4 className="sidebar-section-title">Ferramentas (Chamadas de Função)</h4>
             <fieldset disabled={connected}>
               <div className="tool-list">
-                {tools.map(tool => (
+                {hasGoogleSearch && (
+                  <div className="tool-item">
+                    <label className="tool-checkbox-wrapper">
+                      <input type="checkbox" checked={true} disabled />
+                      <span className="checkbox-visual"></span>
+                    </label>
+                    <span className="tool-name-text" title="Google Search">
+                      Google Search
+                    </span>
+                    <div className="tool-actions" style={{ visibility: 'hidden' }}>
+                      <button disabled><span className="icon">edit</span></button>
+                      <button disabled><span className="icon">delete</span></button>
+                    </div>
+                  </div>
+                )}
+                {functionDeclarations.map(tool => (
                   <div key={tool.name} className="tool-item">
                     <label className="tool-checkbox-wrapper">
                       <input
@@ -340,7 +375,7 @@ function RightSidebar() {
                <button
                   className="add-tool-button"
                   onClick={handleAddNewTool}
-                  disabled={connected}
+                  disabled={connected || hasGoogleSearch}
                 >
                   <span className="icon">add</span> Adicionar Ferramenta
                 </button>
@@ -348,8 +383,19 @@ function RightSidebar() {
           </div>
 
           <div className="sidebar-section">
-            <h4 className="sidebar-section-title">Debugging</h4>
+            <h4 className="sidebar-section-title">Acessibilidade e Depuração</h4>
             <fieldset disabled={connected}>
+              <label className="debug-toggle">
+                <span>Ler respostas de texto em voz alta</span>
+                <div className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={readAloud}
+                    onChange={() => setReadAloud(!readAloud)}
+                  />
+                  <span className="slider"></span>
+                </div>
+              </label>
               <label className="debug-toggle">
                 <span>Logar chamadas de API no console</span>
                 <div className="toggle-switch">

@@ -12,7 +12,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
+ * distributed under the License is distributed on an "ASIS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
@@ -224,7 +224,6 @@ function UploadModal({
 }
 // END of UploadModal component definition
 
-
 export type ControlTrayProps = {
   children?: ReactNode;
 };
@@ -247,10 +246,20 @@ function ControlTray({ children }: ControlTrayProps) {
     disconnect,
     muted,
     toggleMute,
+    videoStream,
+    toggleVideo,
     recordingStatus,
     toggleRecording,
-    recordingTime,
+    speakingTime,
   } = useLiveAPIProvider();
+
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoPreviewRef.current && videoStream) {
+        videoPreviewRef.current.srcObject = videoStream;
+    }
+  }, [videoStream]);
 
   const addTurn = useLogStore(state => state.addTurn);
 
@@ -261,7 +270,9 @@ function ControlTray({ children }: ControlTrayProps) {
       try {
         await connect();
         if (recordingStatus === 'idle') {
-          toggleRecording();
+          // This recording is for saving the session, not just speaking.
+          // We can decide if we want to auto-start it.
+          // For now, let's leave it as a manual action if a button is added.
         }
         toggleMute();
       } catch (error) {
@@ -269,6 +280,10 @@ function ControlTray({ children }: ControlTrayProps) {
         // O ErrorScreen deve lidar com a exibição deste erro para o usuário.
       }
     }
+  };
+
+  const handleVideoClick = async () => {
+     await toggleVideo();
   };
 
   const constructPrimingPrompt = (initialPrompt: string) => {
@@ -298,34 +313,36 @@ Minha primeira pergunta é: ${initialPrompt}`;
     e.preventDefault();
     const text = inputText.trim();
     if (!text || isSending) return;
-
+  
     setIsSending(true);
+    setInputText('');
+    const fullPrompt = constructPrimingPrompt(text);
+  
     try {
-      let justConnected = false;
+      // Conecta à API Live se ainda não estiver conectado.
       if (!connected) {
         await connect();
-        justConnected = true;
       }
-
-      if (justConnected && recordingStatus === 'idle') {
-        toggleRecording();
-      }
-
-      const fullPrompt = constructPrimingPrompt(text);
+      
+      // Adiciona o turno do usuário ao log da conversa.
       addTurn({ role: 'user', text: fullPrompt, isFinal: true });
+  
+      // Envia o prompt de texto através do cliente da API Live.
       client.send({ text: fullPrompt });
-      setInputText('');
-
+  
+      // Limpa os arquivos de contexto se este for o primeiro turno da conversa.
       if (files.length > 0 && useLogStore.getState().turns.length <= 1) {
         clearFiles();
       }
+  
     } catch (error) {
-      console.error('Falha ao conectar ou enviar mensagem:', error);
-      // O ErrorScreen deve lidar com a exibição deste erro.
+      console.error('Falha ao conectar ou enviar texto via API Live:', error);
+      // O erro será tratado pelo ErrorScreen global através dos eventos do cliente.
     } finally {
       setIsSending(false);
     }
   };
+
 
   const handleSendTextFromFile = async (
     textContent: string,
@@ -404,34 +421,74 @@ Minha primeira pergunta é: ${initialPrompt}`;
       ? 'Ativar microfone'
       : 'Desativar microfone'
     : 'Conectar e iniciar microfone';
+    
+  const videoButtonTitle = videoStream ? 'Desativar câmera' : 'Ativar câmera';
 
   const connectButtonTitle = connected ? 'Parar streaming' : 'Iniciar streaming';
 
   return (
     <>
       <section className="chat-input-area">
-        <div className="chat-input-actions">
-          <button
-            className={cn('action-button', { loading: isSending })}
-            onClick={() => openUploadModal({})}
-            aria-label="Anexar arquivo"
-            title="Anexar arquivo ou texto"
-            disabled={isSending || recordingStatus !== 'idle'}
-          >
-            <span className="icon">attach_file</span>
-          </button>
-          <button
-            className={cn('action-button mic-button', { muted, connected })}
-            onClick={handleMicClick}
-            title={micButtonTitle}
-            aria-label={micButtonTitle}
-          >
-            {!muted ? (
-              <span className="material-symbols-outlined filled">mic</span>
-            ) : (
-              <span className="material-symbols-outlined filled">mic_off</span>
+        <div className="chat-controls-top-row">
+          <div className="chat-input-actions">
+            <button
+              className={cn('action-button', { loading: isSending })}
+              onClick={() => openUploadModal({})}
+              aria-label="Anexar arquivo"
+              title="Anexar arquivo ou texto"
+              disabled={isSending || recordingStatus !== 'idle'}
+            >
+              <span className="icon">attach_file</span>
+            </button>
+            <button
+              className={cn('action-button mic-button', { muted, connected })}
+              onClick={handleMicClick}
+              title={micButtonTitle}
+              aria-label={micButtonTitle}
+            >
+              {!muted ? (
+                <span className="material-symbols-outlined filled">mic</span>
+              ) : (
+                <span className="material-symbols-outlined filled">mic_off</span>
+              )}
+            </button>
+            <button
+              className={cn('action-button', { active: !!videoStream })}
+              onClick={handleVideoClick}
+              title={videoButtonTitle}
+              aria-label={videoButtonTitle}
+              disabled={!connected}
+            >
+               <span className="material-symbols-outlined filled">
+                {videoStream ? 'videocam_off' : 'videocam'}
+               </span>
+            </button>
+            {videoStream && (
+                <div className="video-preview-container">
+                    <video ref={videoPreviewRef} autoPlay muted playsInline className="video-preview" />
+                </div>
             )}
-          </button>
+          </div>
+          <div className="session-controls">
+            {connected && !muted && (
+                <div className="recording-timer">
+                  <span className="icon">fiber_manual_record</span>
+                  {formatRecordingTime(speakingTime)}
+                </div>
+              )}
+            <button
+              className={cn('connect-button', { connected })}
+              onClick={connected ? disconnect : connect}
+              title={connectButtonTitle}
+              aria-label={connectButtonTitle}
+              disabled={recordingStatus !== 'idle'}
+            >
+              <span className="material-symbols-outlined filled">
+                {connected ? 'pause_circle' : 'play_circle'}
+              </span>
+              <span>{connected ? 'Conectado' : 'Desconectado'}</span>
+            </button>
+          </div>
         </div>
         <form
           className={cn('text-input-form', { 'agent-thinking': isAgentThinking })}
@@ -471,27 +528,6 @@ Minha primeira pergunta é: ${initialPrompt}`;
             )}
           </button>
         </form>
-         <div className="session-controls">
-          {recordingStatus === 'recording' && (
-              <div className="recording-timer">
-                <span className="icon">fiber_manual_record</span>
-                {formatRecordingTime(recordingTime)}
-              </div>
-            )}
-          <button
-            className={cn('connect-button', { connected })}
-            onClick={connected ? disconnect : connect}
-            title={connectButtonTitle}
-            aria-label={connectButtonTitle}
-            disabled={recordingStatus !== 'idle'}
-          >
-            <span className="material-symbols-outlined filled">
-              {connected ? 'pause_circle' : 'play_circle'}
-            </span>
-            <span>{connected ? 'Conectado' : 'Desconectado'}</span>
-          </button>
-         </div>
-
       </section>
       {uploadModalState.isOpen && (
         <UploadModal

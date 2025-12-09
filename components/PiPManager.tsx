@@ -4,7 +4,7 @@
 */
 import React, { useEffect, useRef, useCallback } from 'react';
 import AgentAvatar from './demo/streaming-console/AgentAvatar';
-import { useUI } from '../lib/state';
+import { useUI, usePersonaStore } from '../lib/state';
 import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
 
 /**
@@ -21,6 +21,7 @@ import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
 const PiPManager: React.FC = () => {
   const { isPiPMode, setIsPiPMode, view, isAgentThinking } = useUI();
   const { volume, agentAudioStream } = useLiveAPIProvider();
+  const { activePersona } = usePersonaStore();
 
   const avatarContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,13 +48,23 @@ const PiPManager: React.FC = () => {
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      // Manually draw the icon on the canvas because the font in SVG blob might not be loaded.
+      if (activePersona?.icon) {
+        ctx.font = '90px "Material Symbols Outlined"';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(activePersona.icon, canvas.width / 2, canvas.height / 2);
+      }
+
       URL.revokeObjectURL(url); // Clean up the blob URL to prevent memory leaks.
     };
     img.onerror = () => {
         URL.revokeObjectURL(url);
     };
     img.src = url;
-  }, []);
+  }, [activePersona]);
 
   // Set up the animation loop to continuously draw the avatar to the canvas.
   useEffect(() => {
@@ -187,7 +198,7 @@ const PiPManager: React.FC = () => {
   return (
     <div style={{ position: 'fixed', top: -9999, left: -9999, width: 256, height: 256 }}>
       <div ref={avatarContainerRef}>
-        <AgentAvatar volume={volume} isAgentThinking={isAgentThinking} />
+        <AgentAvatar volume={volume} isAgentThinking={isAgentThinking} icon={activePersona?.icon} />
       </div>
       <canvas ref={canvasRef} width="256" height="256" />
       {/* This video element is the source for the Picture-in-Picture window.
