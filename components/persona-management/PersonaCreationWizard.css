@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -141,12 +142,17 @@
 
 .prompt-editor-item {
   display: flex;
-  gap: 12px;
-  align-items: center; /* Align delete button vertically */
-  padding: 16px;
-  border-radius: 8px;
+  gap: 16px;
+  align-items: center;
+  padding: 20px;
+  border-radius: 12px;
   background-color: var(--Neutral-15);
   border: 1px solid var(--border-stroke);
+  transition: border-color 0.2s;
+}
+
+.prompt-editor-item:focus-within {
+    border-color: var(--accent-blue-active);
 }
 
 .prompt-inputs {
@@ -156,21 +162,37 @@
     flex-grow: 1;
 }
 
+.prompt-inputs .prompt-label {
+    margin-top: 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+    font-weight: 600;
+}
+.prompt-inputs .prompt-label:first-child {
+    margin-top: 0;
+}
 
 .prompt-editor-item button {
   flex-shrink: 0;
-  background: transparent;
-  color: var(--gray-500);
-  padding: 8px;
+  background: var(--Neutral-20);
+  color: var(--gray-300);
+  padding: 10px;
   border-radius: 50%;
+  border: 1px solid var(--border-stroke);
+  transition: all 0.2s;
 }
 .prompt-editor-item button:hover:not(:disabled) {
-  background-color: var(--Neutral-20);
-  color: var(--Red-400);
+  background-color: var(--Red-600);
+  color: white;
+  border-color: var(--Red-600);
 }
 .prompt-editor-item button:disabled {
-    opacity: 0.4;
+    opacity: 0.3;
     cursor: not-allowed;
+    background-color: transparent;
+    border-color: transparent;
 }
 
 .add-prompt-button {
@@ -179,8 +201,9 @@
   border: 1px dashed var(--border-stroke);
   color: var(--gray-300);
   width: 100%;
-  padding: 10px;
-  border-radius: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  transition: all 0.2s;
 }
 .add-prompt-button:hover {
   background-color: var(--Neutral-15);

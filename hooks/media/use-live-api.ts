@@ -52,6 +52,7 @@ export type UseLiveApiResults = {
   agentAudioStream?: MediaStream;
   error: string | null;
   clearError: () => void;
+  stable: Omit<UseLiveApiResults, 'volume' | 'stable'>;
 };
 
 export function useLiveApi({
@@ -643,5 +644,9 @@ export function useLiveApi({
     agentAudioStream, error, clearError
   ]);
 
-  return { ...stableResult, volume };
+  return useMemo(() => ({
+    ...stableResult,
+    volume,
+    stable: stableResult
+  }), [stableResult, volume]);
 }

@@ -2,23 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { createContext, FC, ReactNode, useContext } from 'react';
+import { createContext, FC, ReactNode, useContext, useMemo } from 'react';
 import { useLiveApi, UseLiveApiResults } from '../hooks/media/use-live-api';
 
 const LiveAPIContext = createContext<Omit<UseLiveApiResults, 'volume'> | undefined>(undefined);
@@ -33,10 +17,43 @@ export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({
   apiKey,
   children,
 }) => {
-  const { volume, ...liveAPI } = useLiveApi({ apiKey });
+  const { volume, ...rawApi } = useLiveApi({ apiKey });
+
+  // CORREÇÃO CRÍTICA: Memorizar o objeto da API para impedir loops de renderização.
+  // O 'rawApi' é recriado a cada frame pelo hook useLiveApi devido à mudança de volume.
+  // Aqui nós extraímos apenas as referências estáveis.
+  const stableApi = useMemo(() => {
+    const impl = {
+      client: rawApi.client,
+      connect: rawApi.connect,
+      disconnect: rawApi.disconnect,
+      connected: rawApi.connected,
+      muted: rawApi.muted,
+      toggleMute: rawApi.toggleMute,
+      videoStream: rawApi.videoStream,
+      toggleVideo: rawApi.toggleVideo,
+      recordingStatus: rawApi.recordingStatus,
+      toggleRecording: rawApi.toggleRecording,
+      recordingTime: rawApi.recordingTime,
+      speakingTime: rawApi.speakingTime,
+      inputAnalyser: rawApi.inputAnalyser,
+      outputAnalyser: rawApi.outputAnalyser,
+      agentAudioStream: rawApi.agentAudioStream,
+      error: rawApi.error,
+      clearError: rawApi.clearError,
+    };
+    return { ...impl, stable: impl };
+  }, [
+    // Dependências explícitas para garantir estabilidade
+    rawApi.client, rawApi.connect, rawApi.disconnect, rawApi.connected, 
+    rawApi.muted, rawApi.toggleMute, rawApi.videoStream, rawApi.toggleVideo,
+    rawApi.recordingStatus, rawApi.toggleRecording, rawApi.recordingTime, 
+    rawApi.speakingTime, rawApi.inputAnalyser, rawApi.outputAnalyser, 
+    rawApi.agentAudioStream, rawApi.error, rawApi.clearError
+  ]);
 
   return (
-    <LiveAPIContext.Provider value={liveAPI}>
+    <LiveAPIContext.Provider value={stableApi}>
       <LiveAPIVolumeContext.Provider value={{ volume }}>
         {children}
       </LiveAPIVolumeContext.Provider>

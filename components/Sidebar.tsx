@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,12 +5,11 @@
 import { useHistoryStore, useLogStore, ConversationTurn } from '../lib/state';
 import c from 'classnames';
 import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
-import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
 import ConfirmationModal from './ConfirmationModal';
 
-// Helper interface for the extracted component props
 interface HistoryListProps {
-  conversations: any[]; // Using any to avoid complex circular imports with Conversation type, but conceptually it is Conversation[]
+  conversations: any[];
   currentConversationId: string;
   loadingId: string | null;
   recordingStatus: string;
@@ -22,7 +20,6 @@ interface HistoryListProps {
   searchQuery: string;
 }
 
-// Extracted and memoized list component to prevent re-renders on volume changes
 const HistoryList = memo(({ 
   conversations, 
   currentConversationId, 
@@ -46,7 +43,6 @@ const HistoryList = memo(({
     }
   }, [editingId]);
 
-  // Handle outside click for menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (openMenuId && menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -179,47 +175,41 @@ const HistoryList = memo(({
 HistoryList.displayName = 'HistoryList';
 
 function Sidebar() {
-  // Consuming provider causes re-renders on volume change (~60fps).
-  // We must ensure expensive operations (like list filtering/rendering) are memoized 
-  // in child components (HistoryList) to prevent Max Update Depth errors.
   const { connected, disconnect, recordingStatus } = useLiveAPIProvider();
-
   const { getSortedConversations, loadConversation, deleteConversation, updateConversationTitle, togglePinConversation, conversations: allConversations } = useHistoryStore();
   const { startNewConversation, currentConversationId } = useLogStore();
   
-  // Memoize sorted conversations
   const conversations = useMemo(() => getSortedConversations(), [allConversations, getSortedConversations]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const handleStartNew = async () => {
+  const handleStartNew = useCallback(async () => {
     if (connected) {
       disconnect();
     }
     await startNewConversation();
-  };
+  }, [connected, disconnect, startNewConversation]);
 
-  const handleLoad = async (id: string) => {
+  const handleLoad = useCallback(async (id: string) => {
     if (id === currentConversationId || loadingId) {
       return;
     }
-
     if (connected) {
       disconnect();
     }
     setLoadingId(id);
     await loadConversation(id);
     setLoadingId(null);
-  };
+  }, [currentConversationId, loadingId, connected, disconnect, loadConversation]);
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = useCallback(() => {
     if (confirmDeleteId) {
       deleteConversation(confirmDeleteId);
     }
     setConfirmDeleteId(null);
-  };
+  }, [confirmDeleteId, deleteConversation]);
   
   return (
     <>
@@ -252,13 +242,6 @@ function Sidebar() {
               />
             </div>
             
-            {/* 
-              Pass only stable/primitive props where possible. 
-              The 'conversations' prop updates when history changes.
-              The 'recordingStatus' prop updates only when recording starts/stops.
-              The parent 'Sidebar' re-renders on every volume change, but 'HistoryList' will NOT 
-              re-render because its props haven't changed.
-            */}
             <HistoryList 
               conversations={conversations}
               currentConversationId={currentConversationId}

@@ -189,9 +189,14 @@ const PersonaCreationWizard: React.FC<PersonaCreationWizardProps> = ({ onClose }
                 {personaData.welcome.prompts.map((p, index) => (
                   <div key={index} className="prompt-editor-item">
                     <div className="prompt-inputs">
-                      <input name="title" value={p.title} onChange={(e) => handlePromptChange(index, e)} placeholder="Título do Card (Ex: Correção Gramatical)" />
-                      <input name="description" value={p.description} onChange={(e) => handlePromptChange(index, e)} placeholder="Descrição do Card" />
-                      <input name="prompt" value={p.prompt} onChange={(e) => handlePromptChange(index, e)} placeholder="Prompt a ser enviado (Ex: Corrija esta frase...)" />
+                      <label className="prompt-label">Título</label>
+                      <input name="title" value={p.title} onChange={(e) => handlePromptChange(index, e)} placeholder="Ex: Correção Gramatical" />
+                      
+                      <label className="prompt-label">Descrição</label>
+                      <input name="description" value={p.description} onChange={(e) => handlePromptChange(index, e)} placeholder="Ex: Peça para corrigir frases..." />
+                      
+                      <label className="prompt-label">Texto do Prompt</label>
+                      <input name="prompt" value={p.prompt} onChange={(e) => handlePromptChange(index, e)} placeholder="Ex: Corrija esta frase: ..." />
                     </div>
                     <button onClick={() => removePrompt(index)} disabled={personaData.welcome.prompts.length === 1} title="Remover prompt">
                       <span className="icon">delete</span>

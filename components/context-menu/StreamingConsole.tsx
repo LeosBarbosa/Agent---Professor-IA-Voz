@@ -20,12 +20,12 @@ function StreamingConsole() {
     outputAnalyser,
     muted,
   } = useLiveAPIProvider();
-  
   const { volume } = useLiveAPIVolume();
 
   const turns = useLogStore(state => state.turns);
   const scrollRef = useRef<HTMLDivElement>(null);
   
+  // Optimized useUI selectors to prevent unnecessary re-renders
   const view = useUI(state => state.view);
   const isAgentThinking = useUI(state => state.isAgentThinking);
   const setIsAgentThinking = useUI(state => state.setIsAgentThinking);

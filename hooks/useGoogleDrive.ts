@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSettings } from '../lib/state';
 
 declare global {
@@ -58,11 +59,11 @@ export function useGoogleDrive({
   const pickerApiLoadedRef = useRef(false);
   const gapiClientLoadedRef = useRef(false);
 
-  const checkApiReady = () => {
+  const checkApiReady = useCallback(() => {
     if (gapiClientLoadedRef.current && pickerApiLoadedRef.current && tokenClientRef.current) {
         setIsDriveApiReady(true);
     }
-  };
+  }, []);
 
   const gapiLoaded = useCallback(() => {
     window.gapi.load('client:picker', async () => {
@@ -77,7 +78,7 @@ export function useGoogleDrive({
       pickerApiLoadedRef.current = true;
       checkApiReady();
     });
-  }, [apiKey]);
+  }, [apiKey, checkApiReady]);
 
   const gisLoaded = useCallback(() => {
     if (!clientId) return;
@@ -103,7 +104,7 @@ export function useGoogleDrive({
       },
     });
     checkApiReady();
-  }, [clientId]);
+  }, [clientId, checkApiReady]);
 
   useEffect(() => {
     if (!apiKey || !clientId) return;
@@ -128,7 +129,7 @@ export function useGoogleDrive({
     };
   }, [apiKey, clientId, gapiLoaded, gisLoaded]);
 
-  const handleAuthClick = () => {
+  const handleAuthClick = useCallback(() => {
     if (tokenClientRef.current) {
       if (window.gapi.client.getToken() === null) {
         tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
@@ -136,9 +137,9 @@ export function useGoogleDrive({
         tokenClientRef.current.requestAccessToken({ prompt: '' });
       }
     }
-  };
+  }, []);
 
-  const handleSignoutClick = () => {
+  const handleSignoutClick = useCallback(() => {
     const token = window.gapi.client.getToken();
     if (token !== null) {
       window.google.accounts.oauth2.revoke(token.access_token, () => {
@@ -147,9 +148,9 @@ export function useGoogleDrive({
         setProfile(null);
       });
     }
-  };
+  }, []);
 
-  const uploadFile = async (content: string, filename: string): Promise<void> => {
+  const uploadFile = useCallback(async (content: string, filename: string): Promise<void> => {
     if (!isSignedIn) {
       throw new Error('User not signed in');
     }
@@ -202,9 +203,9 @@ export function useGoogleDrive({
         console.log(`[DEBUG] Google Drive Upload Succeeded (${res.status}).`);
       }
     }
-  };
+  }, [isSignedIn]);
 
-  const showPicker = (callback: (content: string) => void) => {
+  const showPicker = useCallback((callback: (content: string) => void) => {
     if (!isSignedIn || !pickerApiLoadedRef.current) return;
 
     const view = new window.google.picker.View(window.google.picker.ViewId.DOCS);
@@ -245,9 +246,9 @@ export function useGoogleDrive({
       })
       .build();
     picker.setVisible(true);
-  };
+  }, [isSignedIn, apiKey, clientId]);
   
-  const findFolderByName = async (name: string) => {
+  const findFolderByName = useCallback(async (name: string) => {
     const res = await window.gapi.client.drive.files.list({
       q: `mimeType='application/vnd.google-apps.folder' and name='${name}' and trashed=false`,
       fields: 'files(id, name)',
@@ -257,9 +258,9 @@ export function useGoogleDrive({
       return res.result.files[0];
     }
     return null;
-  };
+  }, []);
 
-  const createFolder = async (name: string) => {
+  const createFolder = useCallback(async (name: string) => {
     const res = await window.gapi.client.drive.files.create({
       resource: {
         name: name,
@@ -268,9 +269,9 @@ export function useGoogleDrive({
       fields: 'id, name',
     });
     return res.result;
-  };
+  }, []);
 
-  const listFiles = async (folderId: string) => {
+  const listFiles = useCallback(async (folderId: string) => {
     const res = await window.gapi.client.drive.files.list({
       q: `'${folderId}' in parents and trashed=false`,
       fields: 'files(id, name, mimeType, modifiedTime, iconLink)',
@@ -278,9 +279,9 @@ export function useGoogleDrive({
       pageSize: 100,
     });
     return res.result.files || [];
-  };
+  }, []);
   
-  const downloadFileContent = async (fileId: string): Promise<Blob> => {
+  const downloadFileContent = useCallback(async (fileId: string): Promise<Blob> => {
      const accessToken = window.gapi.client.getToken().access_token;
      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
         headers: {
@@ -291,9 +292,9 @@ export function useGoogleDrive({
         throw new Error(`Error downloading file: ${response.statusText}`);
      }
      return response.blob();
-  };
+  }, []);
 
-  const searchFiles = async (query: string, folderId: string): Promise<DriveFile[]> => {
+  const searchFiles = useCallback(async (query: string, folderId: string): Promise<DriveFile[]> => {
     // Escape single quotes in the query to prevent errors in the GDrive query language
     const escapedQuery = query.replace(/'/g, "\\'");
     const res = await window.gapi.client.drive.files.list({
@@ -303,9 +304,9 @@ export function useGoogleDrive({
       pageSize: 5, // Limit to the 5 most relevant/recent files
     });
     return res.result.files || [];
-  }
+  }, []);
 
-  return {
+  return useMemo(() => ({
     isDriveApiReady,
     isSignedIn,
     profile,
@@ -318,5 +319,18 @@ export function useGoogleDrive({
     listFiles,
     downloadFileContent,
     searchFiles,
-  };
+  }), [
+    isDriveApiReady,
+    isSignedIn,
+    profile,
+    handleAuthClick,
+    handleSignoutClick,
+    uploadFile,
+    showPicker,
+    findFolderByName,
+    createFolder,
+    listFiles,
+    downloadFileContent,
+    searchFiles,
+  ]);
 }

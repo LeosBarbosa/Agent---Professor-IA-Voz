@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -46,7 +47,17 @@ const GOOGLE_DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY;
 const GOOGLE_DRIVE_CLIENT_ID = process.env.GOOGLE_DRIVE_CLIENT_ID;
 
 function App() {
-  const { view, isPresentationMode, togglePresentationMode, isFocusMode, isPersonaManagementOpen, isWelcomeModalOpen, setWelcomeModalOpen, isSettingsOpen, isHistoryOpen } = useUI();
+  // Select only necessary state to prevent re-renders on 'confidence' or 'volume' changes (if they were here)
+  // Using multiple selectors to avoid needing `useShallow` which might not be imported/available depending on zustand version installed.
+  const view = useUI(s => s.view);
+  const isPresentationMode = useUI(s => s.isPresentationMode);
+  const togglePresentationMode = useUI(s => s.togglePresentationMode);
+  const isFocusMode = useUI(s => s.isFocusMode);
+  const isPersonaManagementOpen = useUI(s => s.isPersonaManagementOpen);
+  const isWelcomeModalOpen = useUI(s => s.isWelcomeModalOpen);
+  const setWelcomeModalOpen = useUI(s => s.setWelcomeModalOpen);
+  const isSettingsOpen = useUI(s => s.isSettingsOpen);
+  const isHistoryOpen = useUI(s => s.isHistoryOpen);
 
   useEffect(() => {
     if (!localStorage.getItem('gemini-live-sandbox-visited')) {
