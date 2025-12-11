@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,11 +22,14 @@ function StreamingConsole() {
     muted,
   } = useLiveAPIProvider();
   
+  // Volume changes every frame, so this component will re-render every frame.
+  // This is expected for the visualizer. Children are memoized where possible.
   const { volume } = useLiveAPIVolume();
 
   const turns = useLogStore(state => state.turns);
   const scrollRef = useRef<HTMLDivElement>(null);
   
+  // Granular selectors to prevent unnecessary re-renders when other UI parts change
   const view = useUI(state => state.view);
   const isAgentThinking = useUI(state => state.isAgentThinking);
   const setIsAgentThinking = useUI(state => state.setIsAgentThinking);

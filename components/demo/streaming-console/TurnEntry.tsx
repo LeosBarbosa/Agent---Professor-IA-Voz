@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,13 +22,10 @@ const formatTimestamp = (date: Date) => {
 };
 
 const TurnEntry: React.FC<TurnEntryProps> = ({ turn: t, turnIndex }) => {
-  const { searchQuery, searchResults, currentSearchResultIndex } = useUI(
-    state => ({
-      searchQuery: state.searchQuery,
-      searchResults: state.searchResults,
-      currentSearchResultIndex: state.currentSearchResultIndex,
-    }),
-  );
+  // Use granular selectors to avoid re-rendering when unrelated state (like confidence) changes.
+  const searchQuery = useUI(state => state.searchQuery);
+  const searchResults = useUI(state => state.searchResults);
+  const currentSearchResultIndex = useUI(state => state.currentSearchResultIndex);
 
   const renderTurnContent = () => {
     const text = t.text;
