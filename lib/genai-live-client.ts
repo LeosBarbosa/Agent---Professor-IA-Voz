@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -99,8 +100,6 @@ export class GenAILiveClient {
     });
   }
 
-  // The `connect` method separates history from the main config object,
-  // as the Gemini API expects it as a top-level property in the connection options.
   public async connect(
     config: LiveConnectConfig,
     history?: Content[],
@@ -121,9 +120,24 @@ export class GenAILiveClient {
       this.session = await this.client.live.connect({
         model: this.model,
         config: config,
-        history: history,
         callbacks,
       });
+
+      // Send history if provided
+      if (history && history.length > 0) {
+        try {
+          this.log('client.history', 'Sending conversation history');
+          this.session.sendClientContent({
+            turns: history,
+            turnComplete: false,
+          });
+        } catch (historyError) {
+          console.error('Failed to send history:', historyError);
+          // Don't fail the entire connection if history fails, but log it.
+          // In some cases history might be too large or malformed.
+        }
+      }
+
     } catch (e: any) {
       console.error('Error connecting to GenAI Live:', e);
       this._status = 'disconnected';
@@ -154,8 +168,13 @@ export class GenAILiveClient {
       this.emitter.emit('error', new ErrorEvent('Client is not connected'));
       return;
     }
+    const content: Content = {
+      role: 'user',
+      parts: Array.isArray(parts) ? parts : [parts],
+    };
+
     this.session.sendClientContent({
-      turns: Array.isArray(parts) ? parts : [parts],
+      turns: [content],
       turnComplete
     });
     this.log(`client.send`, parts);

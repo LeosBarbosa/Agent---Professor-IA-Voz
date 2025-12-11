@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect } from 'react';
-import { Persona, usePersonaStore, FunctionCall } from '../../../lib/state';
+import { Persona, usePersonaStore, FunctionCall } from '../../lib/state';
 import ToolEditorModal from '../ToolEditorModal';
 import { FunctionResponseScheduling } from '@google/genai';
 

@@ -47,7 +47,7 @@ export function sanitizeToolsForApi(
         .filter(declaration => declaration.isEnabled) // 1. Filtra apenas as ferramentas ativadas.
         .map(declaration => {
           // 2. Cria um novo objeto contendo apenas as propriedades válidas para a API.
-          const { name, description, parameters, scheduling } = declaration;
+          const { name, description, parameters } = declaration;
 
           const apiDeclaration: any = {
             name,
@@ -55,11 +55,9 @@ export function sanitizeToolsForApi(
             parameters,
           };
 
-          // 3. Adiciona condicionalmente propriedades específicas do contexto.
-          // 'scheduling' é válido apenas para a API de voz (Live).
-          if (context === 'live' && scheduling) {
-            apiDeclaration.scheduling = scheduling;
-          }
+          // NOTE: The 'scheduling' property was causing "Request contains an invalid argument" errors.
+          // It seems it is not supported in the FunctionDeclaration structure for the Live API currently.
+          // Removed to fix the connection error.
 
           return apiDeclaration;
         });

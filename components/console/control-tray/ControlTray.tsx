@@ -268,7 +268,11 @@ function ControlTray({ children }: ControlTrayProps) {
       toggleMute();
     } else {
       try {
-        await connect();
+        const success = await connect();
+        if (!success) {
+            console.error('Failed to connect via handleMicClick');
+            return;
+        }
         if (recordingStatus === 'idle') {
           // This recording is for saving the session, not just speaking.
           // We can decide if we want to auto-start it.
@@ -321,7 +325,13 @@ Minha primeira pergunta é: ${initialPrompt}`;
     try {
       // Conecta à API Live se ainda não estiver conectado.
       if (!connected) {
-        await connect();
+        const success = await connect();
+        if (!success) {
+            // Se a conexão falhar, interrompe o fluxo para evitar erros em cascata
+            // e o loop "Max update depth exceeded" causado por re-renderizações e eventos de erro.
+            setIsSending(false);
+            return;
+        }
       }
       
       // Adiciona o turno do usuário ao log da conversa.
@@ -355,7 +365,11 @@ Minha primeira pergunta é: ${initialPrompt}`;
     try {
       let justConnected = false;
       if (!connected) {
-        await connect();
+        const success = await connect();
+        if (!success) {
+            setIsSending(false);
+            return;
+        }
         justConnected = true;
       }
 

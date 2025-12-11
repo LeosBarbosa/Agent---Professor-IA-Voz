@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useRef } from 'react';
-import { useFileStore } from '../../../lib/state';
+import { useFileStore } from '../../lib/state';
 
 function FilePrimingArea() {
   const { files, addFile, removeFile } = useFileStore();

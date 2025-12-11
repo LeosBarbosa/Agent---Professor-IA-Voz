@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +7,7 @@ import { useEffect, useRef, memo } from 'react';
 import WelcomeScreen from '../welcome-screen/WelcomeScreen';
 import { LiveServerContent } from '@google/genai';
 
-import { useLiveAPIProvider } from '../../../contexts/LiveAPIContext';
+import { useLiveAPIProvider, useLiveAPIVolume } from '../../../contexts/LiveAPIContext';
 import { useLogStore, useUI, usePersonaStore } from '../../../lib/state';
 import AgentAvatar from './AgentAvatar';
 import WaveformVisualizer from '../waveform-visualizer/WaveformVisualizer';
@@ -16,11 +17,12 @@ import ChatSearch from './ChatSearch';
 function StreamingConsole() {
   const {
     client,
-    volume,
     inputAnalyser,
     outputAnalyser,
     muted,
   } = useLiveAPIProvider();
+  const { volume } = useLiveAPIVolume();
+  
   const turns = useLogStore(state => state.turns);
   const scrollRef = useRef<HTMLDivElement>(null);
   const {

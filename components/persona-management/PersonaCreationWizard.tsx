@@ -1,10 +1,11 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState } from 'react';
-import { Persona, WelcomePrompt, usePersonaStore, useLogStore } from '../../../lib/state';
-import { useLiveAPIProvider } from '../../../contexts/LiveAPIContext';
+import { Persona, WelcomePrompt, usePersonaStore, useLogStore } from '../../lib/state';
+import { useLiveAPIProvider } from '../../contexts/LiveAPIContext';
 import './PersonaCreationWizard.css';
 
 interface PersonaCreationWizardProps {

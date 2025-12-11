@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -5,7 +6,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import AgentAvatar from './demo/streaming-console/AgentAvatar';
 import { useUI, usePersonaStore } from '../lib/state';
-import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
+import { useLiveAPIProvider, useLiveAPIVolume } from '../contexts/LiveAPIContext';
 
 /**
  * A component that manages the native browser Picture-in-Picture (PiP) functionality.
@@ -20,7 +21,8 @@ import { useLiveAPIProvider } from '../contexts/LiveAPIContext';
  */
 const PiPManager: React.FC = () => {
   const { isPiPMode, setIsPiPMode, view, isAgentThinking } = useUI();
-  const { volume, agentAudioStream } = useLiveAPIProvider();
+  const { agentAudioStream } = useLiveAPIProvider();
+  const { volume } = useLiveAPIVolume();
   const { activePersona } = usePersonaStore();
 
   const avatarContainerRef = useRef<HTMLDivElement>(null);
@@ -128,84 +130,4 @@ const PiPManager: React.FC = () => {
 
   // This useEffect hook manages entering and exiting the browser's native PiP mode
   // by calling the `requestPictureInPicture` API on the video element.
-  // It is triggered by changes in the `isPiPMode` global state.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || view !== 'chat') return;
-
-    const enterPiP = async () => {
-      // This function handles the actual request to enter PiP.
-      if (document.pictureInPictureElement) return; // Already in PiP
-      try {
-        await video.requestPictureInPicture();
-      } catch (err) {
-        console.error('PiP toggle failed:', err);
-        setIsPiPMode(false); // Reset state on failure.
-      }
-    };
-
-    const togglePiP = async () => {
-      if (isPiPMode) {
-        // Check if metadata is loaded. readyState >= 1 means HAVE_METADATA.
-        // This check prevents the "Metadata for the video element are not loaded yet" error.
-        if (video.readyState >= 1) {
-          enterPiP();
-        } else {
-          // If metadata isn't ready, we attach a one-time event listener to enter PiP
-          // as soon as the video is ready.
-          video.addEventListener('loadedmetadata', enterPiP, { once: true });
-        }
-      } else {
-        // Logic to exit PiP mode.
-        if (document.pictureInPictureElement) {
-          try {
-            await document.exitPictureInPicture();
-          } catch (err) {
-            console.error('PiP exit failed:', err);
-          }
-        }
-      }
-    };
-    
-    togglePiP();
-
-    // The cleanup function is crucial. If the component unmounts or `isPiPMode` changes
-    // before `loadedmetadata` fires, we must remove the listener to prevent memory leaks.
-    return () => {
-      if (video) {
-        video.removeEventListener('loadedmetadata', enterPiP);
-      }
-    };
-  }, [isPiPMode, setIsPiPMode, view]);
-
-  // Sync state if the user closes the PiP window manually via its own controls.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const onLeavePiP = () => setIsPiPMode(false);
-    video.addEventListener('leavepictureinpicture', onLeavePiP);
-
-    return () => video.removeEventListener('leavepictureinpicture', onLeavePiP);
-  }, [setIsPiPMode]);
-
-  // This component renders hidden elements required for the PiP functionality.
-  // It's placed in a container positioned off-screen to avoid affecting the layout.
-  if (view !== 'chat') {
-    return null;
-  }
-  
-  return (
-    <div style={{ position: 'fixed', top: -9999, left: -9999, width: 256, height: 256 }}>
-      <div ref={avatarContainerRef}>
-        <AgentAvatar volume={volume} isAgentThinking={isAgentThinking} icon={activePersona?.icon} />
-      </div>
-      <canvas ref={canvasRef} width="256" height="256" />
-      {/* This video element is the source for the Picture-in-Picture window.
-          It plays the combined audio/video stream and must have `playsInline`. */}
-      <video ref={videoRef} playsInline />
-    </div>
-  );
-};
-
-export default PiPManager;
+  // It is triggered by changes in the `isPiPMode` global

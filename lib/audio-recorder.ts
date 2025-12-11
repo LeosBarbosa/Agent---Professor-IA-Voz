@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -50,6 +51,7 @@ export class AudioRecorder {
   analyser: AnalyserNode | undefined;
 
   private starting: Promise<void> | null = null;
+  private stopped: boolean = false;
 
   constructor(public sampleRate = 16000) {}
 
@@ -58,72 +60,111 @@ export class AudioRecorder {
       throw new Error('Could not request user media');
     }
 
-    this.starting = new Promise(async (resolve, reject) => {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.audioContext = await audioContext({ sampleRate: this.sampleRate });
-      this.source = this.audioContext.createMediaStreamSource(this.stream);
+    if (this.starting) {
+      return this.starting;
+    }
 
-      const workletName = 'audio-recorder-worklet';
-      const src = createWorketFromSrc(workletName, AudioRecordingWorklet);
+    this.stopped = false;
 
-      await this.audioContext.audioWorklet.addModule(src);
-      this.recordingWorklet = new AudioWorkletNode(
-        this.audioContext,
-        workletName
-      );
-
-      this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
-        // Worklet processes recording floats and messages converted buffer
-        const arrayBuffer = ev.data.data.int16arrayBuffer;
-
-        if (arrayBuffer) {
-          const arrayBufferString = arrayBufferToBase64(arrayBuffer);
-          this.emitter.emit('data', arrayBufferString);
+    this.starting = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        if (this.stopped) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
         }
-      };
-      this.source.connect(this.recordingWorklet);
 
-      // vu meter worklet
-      const vuWorkletName = 'vu-meter';
-      await this.audioContext.audioWorklet.addModule(
-        createWorketFromSrc(vuWorkletName, VolMeterWorket)
-      );
-      this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
-      this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
-        this.emitter.emit('volume', ev.data.volume);
-      };
+        this.stream = stream;
+        this.audioContext = await audioContext({ sampleRate: this.sampleRate });
+        
+        if (this.stopped) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.audioContext.close();
+            return;
+        }
 
-      this.source.connect(this.vuWorklet);
+        this.source = this.audioContext.createMediaStreamSource(this.stream);
 
-      // Analyser for visualization
-      this.analyser = this.audioContext.createAnalyser();
-      this.source.connect(this.analyser);
+        const workletName = 'audio-recorder-worklet';
+        const src = createWorketFromSrc(workletName, AudioRecordingWorklet);
 
-      this.recording = true;
-      resolve();
-      this.starting = null;
-    });
+        await this.audioContext.audioWorklet.addModule(src);
+        this.recordingWorklet = new AudioWorkletNode(
+          this.audioContext,
+          workletName
+        );
+
+        this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
+          // Worklet processes recording floats and messages converted buffer
+          const arrayBuffer = ev.data.data.int16arrayBuffer;
+
+          if (arrayBuffer) {
+            const arrayBufferString = arrayBufferToBase64(arrayBuffer);
+            this.emitter.emit('data', arrayBufferString);
+          }
+        };
+        this.source.connect(this.recordingWorklet);
+
+        // vu meter worklet
+        const vuWorkletName = 'vu-meter';
+        await this.audioContext.audioWorklet.addModule(
+          createWorketFromSrc(vuWorkletName, VolMeterWorket)
+        );
+        this.vuWorklet = new AudioWorkletNode(this.audioContext, vuWorkletName);
+        this.vuWorklet.port.onmessage = (ev: MessageEvent) => {
+          this.emitter.emit('volume', ev.data.volume);
+        };
+
+        this.source.connect(this.vuWorklet);
+
+        // Analyser for visualization
+        this.analyser = this.audioContext.createAnalyser();
+        this.source.connect(this.analyser);
+
+        this.recording = true;
+      } catch (error) {
+        this.stop();
+        throw error;
+      } finally {
+        this.starting = null;
+      }
+    })();
+
+    return this.starting;
   }
 
   stop() {
-    // It is plausible that stop would be called before start completes,
-    // such as if the Websocket immediately hangs up
-    const handleStop = () => {
-      if (this.source) {
-        if (this.recordingWorklet) this.source.disconnect(this.recordingWorklet);
-        if (this.vuWorklet) this.source.disconnect(this.vuWorklet);
-        if (this.analyser) this.source.disconnect(this.analyser);
+    this.stopped = true;
+    if (this.source) {
+      try {
+        if (this.recordingWorklet) {
+          this.recordingWorklet.disconnect();
+          this.source.disconnect(this.recordingWorklet);
+        }
+        if (this.vuWorklet) {
+          this.vuWorklet.disconnect();
+          this.source.disconnect(this.vuWorklet);
+        }
+        if (this.analyser) {
+          this.analyser.disconnect();
+          this.source.disconnect(this.analyser);
+        }
+        this.source.disconnect();
+      } catch (e) {
+        console.warn('Error disconnecting audio nodes during stop:', e);
       }
-      this.stream?.getTracks().forEach(track => track.stop());
-      this.stream = undefined;
-      this.recordingWorklet = undefined;
-      this.vuWorklet = undefined;
-      this.analyser = undefined;
-    };
-    if (this.starting) {
-      this.starting.then(handleStop);
-      return;
     }
-    handleStop();
+    
+    this.stream?.getTracks().forEach(track => track.stop());
+    this.stream = undefined;
+    this.recordingWorklet = undefined;
+    this.vuWorklet = undefined;
+    this.analyser = undefined;
+    
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.close().catch(e => console.warn('Error closing AudioContext:', e));
+    }
+    this.audioContext = undefined;
   }
 }

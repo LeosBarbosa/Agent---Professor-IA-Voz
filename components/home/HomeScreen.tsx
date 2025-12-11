@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect } from 'react';
-import { usePersonaStore, useUI } from '../../../lib/state';
+import { usePersonaStore, useUI } from '../../lib/state';
 import PersonaCard from './PersonaCard';
 import FilePrimingArea from './FilePrimingArea';
 

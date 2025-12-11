@@ -5,7 +5,7 @@ import {
   HarmBlockThreshold,
   Content,
   Modality,
-  GenerateContentRequest,
+  GenerateContentParameters,
 } from "@google/genai";
 import * as cors from "cors";
 
@@ -80,30 +80,31 @@ export const geminiVoiceStreamProxy = functions.https.onRequest(
         const sanitizedTools = sanitizeToolsForTextApi(tools);
 
         // Constrói a requisição no formato correto esperado pelo SDK
-        const genAIRequest: GenerateContentRequest = {
+        // Move tools, systemInstruction, safetySettings, and generation parameters into 'config'
+        const genAIRequest: GenerateContentParameters = {
             model: model || DEFAULT_MODEL_NAME,
             contents: contents,
-            tools: sanitizedTools,
-            systemInstruction: systemInstruction,
-            safetySettings: [
-              {
-                category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-              },
-              {
-                category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-              },
-              {
-                category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-              },
-              {
-                category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-              },
-            ],
-            generationConfig: {
+            config: {
+                tools: sanitizedTools,
+                systemInstruction: systemInstruction,
+                safetySettings: [
+                  {
+                    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                  },
+                  {
+                    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                  },
+                  {
+                    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                  },
+                  {
+                    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                  },
+                ],
                 temperature: 0.9,
                 topK: 1,
                 ...(config || {}), // Espalha a configuração do cliente (ex: thinkingConfig)

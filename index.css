@@ -1,3 +1,4 @@
+
 body {
   margin: 0;
   font-family:
@@ -2316,4 +2317,5 @@ form button:first-of-type {
   border: 1px solid var(--border-stroke);
   background-color: var(--Neutral-5);
   color: var(--text);
-  transition: border-color 0
+  transition: border-color 0.2s;
+}

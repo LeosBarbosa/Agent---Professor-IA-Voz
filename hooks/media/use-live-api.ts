@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -34,7 +35,7 @@ const FOLDER_NAME = 'Base de Conhecimento - Projetos';
 
 export type UseLiveApiResults = {
   client: GenAILiveClient;
-  connect: () => Promise<void>;
+  connect: () => Promise<boolean>;
   disconnect: () => void;
   connected: boolean;
   volume: number;
@@ -100,6 +101,16 @@ export function useLiveApi({
   const videoIntervalRef = useRef<number | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // Helper to update volume safely
+  const updateVolume = useCallback((newVolume: number) => {
+    if (rafRef.current) return; // Drop frame if already scheduled
+    rafRef.current = requestAnimationFrame(() => {
+        setVolume(newVolume);
+        rafRef.current = null;
+    });
+  }, []);
 
   useEffect(() => {
     if (!audioStreamerRef.current) {
@@ -109,14 +120,19 @@ export function useLiveApi({
         setAgentAudioStream(audioStreamerRef.current.outputStream);
         audioStreamerRef.current
           .addWorklet<any>('vu-meter', VolMeterWorket, (ev: any) => {
-            setVolume(ev.data.volume);
+            updateVolume(ev.data.volume);
           })
           .catch(err => {
             console.error('Error adding worklet:', err);
           });
       });
     }
-  }, []);
+    return () => {
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+        }
+    };
+  }, [updateVolume]);
 
   useEffect(() => {
     const recorder = audioRecorderRef.current;
@@ -206,6 +222,9 @@ export function useLiveApi({
         let message = 'Ocorreu um erro desconhecido na API Live.';
         if (e.message) {
             message = e.message;
+        }
+        if (message.includes('unavailable')) {
+            message = 'O serviço está temporariamente indisponível (Erro 503). Por favor, tente novamente em alguns instantes.';
         }
         setError(message);
     };
@@ -384,7 +403,7 @@ export function useLiveApi({
   }, [client, findFolderByName, searchFiles, downloadFileContent]);
 
   const connect = useCallback(async () => {
-    setError(null); // Limpa erros anteriores a cada nova tentativa de conexão.
+    setError(null);
     try {
         const { systemPrompt, voice } = useSettings.getState();
         const { turns } = useLogStore.getState();
@@ -400,8 +419,13 @@ export function useLiveApi({
               parts.push({ text: turn.text });
             }
             if (turn.image) {
-              const [meta, base64Data] = turn.image.split(',');
-              const mimeType = meta.split(':')[1].split(';')[0];
+              const base64Data = turn.image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+              let mimeType = 'image/jpeg';
+              const match = turn.image.match(/^data:(image\/[a-z]+);base64,/);
+              if (match && match[1]) {
+                mimeType = match[1];
+              }
+              
               parts.push({
                 inlineData: {
                   mimeType: mimeType,
@@ -428,35 +452,42 @@ export function useLiveApi({
           outputAudioTranscription: {},
         };
 
-        // Conditionally add tools to config only if valid tools exist
         if (tools && tools.length > 0) {
             dynamicConfig.tools = tools;
         }
 
         if (systemPrompt && systemPrompt.trim()) {
-          dynamicConfig.systemInstruction = systemPrompt;
+          dynamicConfig.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
         }
     
     if (useSettings.getState().debugMode) {
       console.log('[DEBUG] client.connect with config:', dynamicConfig);
     }
 
+    // Attempt audio recording start
     await audioRecorderRef.current.start();
+
     setInputAnalyser(audioRecorderRef.current.analyser);
-    await client.connect(dynamicConfig, history);
+    
+    const connected = await client.connect(dynamicConfig, history);
+    if (!connected) {
+        return false;
+    }
+    
+    return true;
     } catch (err: any) {
         let message = 'Falha ao iniciar a sessão de áudio.';
-        if (err instanceof DOMException && err.name === 'NotAllowedError') {
-            message = 'Permissão do microfone negada. Por favor, habilite o acesso nas configurações do seu navegador.';
-        } else if (err instanceof DOMException && err.name === 'NotFoundError') {
-            message = 'Nenhum microfone encontrado. Por favor, conecte um microfone e tente novamente.';
-        } else if (err.message && err.message.includes('invalid argument')) {
-            message = 'A conexão falhou devido a uma configuração inválida na persona. Verifique se as ferramentas selecionadas são compatíveis com a API Live.';
+        if (err.message && err.message.includes('invalid argument')) {
+            message = 'A conexão falhou devido a uma configuração inválida na persona (Argumento Inválido). Verifique ferramentas ou prompt.';
         } else if (err.message) {
             message = err.message;
         }
+        
+        console.error('Connection failed:', err);
         setError(message);
-        audioRecorderRef.current.stop(); // Garante que o microfone seja liberado em caso de falha.
+        audioRecorderRef.current.stop();
+        client.disconnect();
+        return false;
     }
   }, [client]);
 
@@ -470,7 +501,6 @@ export function useLiveApi({
 
   const toggleVideo = useCallback(async () => {
     if (videoStream) {
-        // Stop all tracks
         videoStream.getTracks().forEach(track => track.stop());
         setVideoStream(null);
     } else {
@@ -588,12 +618,11 @@ export function useLiveApi({
 
   const clearError = useCallback(() => setError(null), []);
 
-  return useMemo(() => ({
+  const stableResult = useMemo(() => ({
     client,
     connect,
     connected,
     disconnect,
-    volume,
     toggleMute,
     muted,
     toggleVideo,
@@ -608,9 +637,11 @@ export function useLiveApi({
     error,
     clearError,
   }), [
-    client, connect, connected, disconnect, volume, toggleMute, muted,
+    client, connect, connected, disconnect, toggleMute, muted,
     toggleVideo, videoStream, toggleRecording, recordingStatus,
     recordingTime, speakingTime, inputAnalyser, outputAnalyser,
     agentAudioStream, error, clearError
   ]);
+
+  return { ...stableResult, volume };
 }

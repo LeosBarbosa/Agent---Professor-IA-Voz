@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,7 +28,7 @@ const VolMeterWorket = `
     constructor() {
       super()
       this.volume = 0
-      this.updateIntervalInMS = 25
+      this.updateIntervalInMS = 100
       this.nextUpdateFrame = this.updateIntervalInMS
       this.port.onmessage = event => {
         if (event.data.updateIntervalInMS) {

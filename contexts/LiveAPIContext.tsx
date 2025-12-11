@@ -21,7 +21,8 @@
 import { createContext, FC, ReactNode, useContext } from 'react';
 import { useLiveApi, UseLiveApiResults } from '../hooks/media/use-live-api';
 
-const LiveAPIContext = createContext<UseLiveApiResults | undefined>(undefined);
+const LiveAPIContext = createContext<Omit<UseLiveApiResults, 'volume'> | undefined>(undefined);
+const LiveAPIVolumeContext = createContext<{ volume: number } | undefined>(undefined);
 
 export type LiveAPIProviderProps = {
   children: ReactNode;
@@ -32,10 +33,14 @@ export const LiveAPIProvider: FC<LiveAPIProviderProps> = ({
   apiKey,
   children,
 }) => {
-  const liveAPI = useLiveApi({ apiKey });
+  const { volume, ...liveAPI } = useLiveApi({ apiKey });
 
   return (
-    <LiveAPIContext.Provider value={liveAPI}>{children}</LiveAPIContext.Provider>
+    <LiveAPIContext.Provider value={liveAPI}>
+      <LiveAPIVolumeContext.Provider value={{ volume }}>
+        {children}
+      </LiveAPIVolumeContext.Provider>
+    </LiveAPIContext.Provider>
   );
 };
 
@@ -43,6 +48,14 @@ export const useLiveAPIProvider = () => {
   const context = useContext(LiveAPIContext);
   if (!context) {
     throw new Error('useLiveAPIProvider must be used within a LiveAPIProvider');
+  }
+  return context;
+};
+
+export const useLiveAPIVolume = () => {
+  const context = useContext(LiveAPIVolumeContext);
+  if (!context) {
+    throw new Error('useLiveAPIVolume must be used within a LiveAPIProvider');
   }
   return context;
 };

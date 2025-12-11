@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { memo } from 'react';
-import { Persona, usePersonaStore, useLogStore } from '../../../lib/state';
+import { Persona, usePersonaStore, useLogStore } from '../../lib/state';
 
 interface PersonaCardProps {
   persona: Persona;

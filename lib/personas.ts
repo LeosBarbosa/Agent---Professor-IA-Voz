@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -126,7 +127,7 @@ Fornecer respostas precisas, concisas e atualizadas, utilizando a ferramenta de 
     name: 'Estrategista de IA',
     icon: 'psychology',
     tagline: 'Seu parceiro para raciocínio complexo, análise de dados e planejamento estratégico.',
-    description: 'Uma IA avançada que usa o gemini-2.5-pro com modo de pensamento para lidar com suas tarefas mais exigentes de análise, codificação e resolução de problemas.',
+    description: 'Uma IA avançada que usa o gemini-3-pro-preview com modo de pensamento para lidar com suas tarefas mais exigentes de análise, codificação e resolução de problemas.',
     systemPrompt: `Você é um estrategista de IA sênior, uma entidade analítica projetada para raciocínio profundo e resolução de problemas complexos. Você opera com precisão, lógica e uma abordagem metódica.
 
 **Sua Missão:**
@@ -147,17 +148,17 @@ Ajudar o usuário a dissecar problemas multifacetados, analisar dados, gerar có
     tools: [],
     isDefault: false,
     speechRate: 1.0,
-    textModel: 'gemini-2.5-pro',
+    textModel: 'gemini-3-pro-preview',
     textModelConfig: {
         thinkingConfig: { thinkingBudget: 32768 },
     },
     header: {
       title: 'Estrategista de IA',
-      subtitle: 'Raciocínio avançado com Gemini 2.5 Pro',
+      subtitle: 'Raciocínio avançado com Gemini 3 Pro',
     },
     welcome: {
       title: 'Estrategista de IA',
-      description: 'Estou usando o Gemini 2.5 Pro com capacidade de pensamento aprimorada. Apresente-me seus desafios mais complexos de análise, estratégia ou codificação.',
+      description: 'Estou usando o Gemini 3 Pro com capacidade de pensamento aprimorada. Apresente-me seus desafios mais complexos de análise, estratégia ou codificação.',
       tips: [
         "Para obter os melhores resultados, forneça o máximo de contexto possível em sua pergunta.",
         "Problemas complexos de codificação são minha especialidade. Forneça os requisitos claramente.",
